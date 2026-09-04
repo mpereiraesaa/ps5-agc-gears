@@ -1,0 +1,15 @@
+.deps/
+.env
+build/
+dist/
+*.elf
+*.o
+*.prx
+*.self
+__pycache__/
+
+# Private research never belongs in this repository.
+captures/
+dumps/
+ghidra/
+sessions/
