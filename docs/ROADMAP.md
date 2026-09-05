@@ -9,6 +9,8 @@
 - [ ] Choose repository visibility and confirm the final distributable identity.
 - [ ] Derive the standalone app from a pinned public boilerplate revision.
 - [ ] Extract the AGC backend behind a small documented interface.
+- [x] Classify imports and reverse-engineering needs by capability in
+  `docs/CAPABILITY_MATRIX.md`.
 - [ ] Move only independently authored shaders and metadata tooling.
 - [ ] Add host unit tests and a fixture generated entirely from public sources.
 - [ ] Build without references to the parent laboratory.

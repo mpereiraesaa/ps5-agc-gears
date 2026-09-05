@@ -6,6 +6,7 @@ README.md
 assets/branding/README.md
 assets/branding/icon-master.png
 docs/ARCHITECTURE.md
+docs/CAPABILITY_MATRIX.md
 docs/ROADMAP.md
 sce_sys/icon0.png
 sce_sys/param.json
