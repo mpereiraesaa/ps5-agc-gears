@@ -83,6 +83,10 @@ for `gfx1013`; both produced relocation-free PAL ELFs with AMDGPU flags `0x42`.
 - Cube's 4×4 MVP maps directly to 16 pre-raster user-data words. Interleaved
   position and normal inputs cause PAL to request the compiler-defined vertex
   buffer table pointer (`0x1000000f`); the stage reports 20 user SGPRs.
+- The final clean-room Gears fixture adds a unit quaternion and material color
+  to the MVP. All 24 words remain direct pre-raster user data; the compiler
+  reports 28 user SGPRs and no relocation. The quaternion transforms normals,
+  allowing correct per-object lighting without a normal-matrix buffer.
 
 Public GFX10 PAL source and the resulting `gfx1013` ISA close the vertex side
 further:
