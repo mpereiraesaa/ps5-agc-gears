@@ -74,8 +74,9 @@ substantial decompilation enter this repository.
 
 ## Compiler evidence — 2026-09-05
 
-Clean-room Plasma and Cube microshaders were compiled offline with public LLPC
-for `gfx1013`; both produced relocation-free PAL ELFs with AMDGPU flags `0x42`.
+Clean-room Plasma, Cube and lit-Gears microshaders were compiled offline with
+public LLPC for `gfx1013`; all produced relocation-free PAL ELFs with AMDGPU
+flags `0x42`.
 
 - Plasma's four floats (`time`, inverse width/height and phase) map directly to
   pixel-stage user data 0–3. Including the internal table pointer, PAL reports
@@ -104,8 +105,9 @@ further:
   compiler-selected `VertexBufferTable` user register.
 
 Thus non-indexed Cube/Gears needs neither two descriptors nor a general uniform
-subsystem. The remaining hardware contract on the critical path is depth;
-indexed drawing and explicit VideoOut pacing remain optional refinements.
+subsystem. The next hardware gate is depth consumption using the now-bounded
+offline bootstrap; indexed drawing and explicit VideoOut pacing remain optional
+refinements.
 
 ## Public depth register map
 
