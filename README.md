@@ -56,6 +56,13 @@ Compile the public shader source with an LLPC build that supports GFX1013:
 make shaders AMDLLPC=/path/to/amdllpc LLVM_READELF=/path/to/llvm-readelf
 ```
 
+The validated compiler is the public
+[`mpereiraesaa/llpc` GFX1013 commit](https://github.com/mpereiraesaa/llpc/commit/23a0757d922da7eb06c6a626d48553e0fb99fde0),
+built against the pinned
+[`GPUOpen-Drivers/llvm-project` commit](https://github.com/GPUOpen-Drivers/llvm-project/commit/8fd93e26cf9b1235fc9573b68b96233818be0ed4).
+The LLPC fork includes a regression that compiles a shader with
+`-gfxip=10.1.3`.
+
 Build the ignored native title directory:
 
 ```sh
