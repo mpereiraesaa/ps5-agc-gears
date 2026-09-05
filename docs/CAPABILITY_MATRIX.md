@@ -112,6 +112,15 @@ override, cache-policy, polygon-offset and HTILE-surface registers around the
 view. The first implementation will therefore use the uncompressed/no-HTILE
 path only after its allocation/swizzle and surrounding defaults are validated.
 
+Public Mesa now accepts GFX1013 external revisions `0x82..0x85` and routes
+them through generic GFX10 AddrLib. This proves the fixed depth swizzle family
+is `ADDR_SW_64KB_Z_X`: GFX1013 does not enable RB+ there, so the variable-block
+depth mode is unavailable. It does **not** prove a complete byte layout.
+AddrLib also requires the device's real `GB_ADDR_CONFIG` (pipe count,
+interleave and compression topology). No Navi10-derived or emulator-default
+value is treated as PS5 fact, and the renderer must fail closed until that
+topology input is independently established.
+
 ## Frame ownership contract
 
 No additional pacing import is required for the first animation loop. Two
