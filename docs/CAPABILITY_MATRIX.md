@@ -20,7 +20,7 @@ Most remaining work does not require discovering a new NID.
 | Animated triangle | No | Per-frame command reset, monotonic flip IDs and double-buffer ownership |
 | Plasma | No | Time/resolution user data and a stable frame loop |
 | Procedural cube | Probably no | Matrix user data, perspective, culling and optionally depth |
-| Non-indexed gear | Probably no | Vertex/normal buffer descriptors or procedural vertex fetch |
+| Non-indexed gear | No known new import | One interleaved vertex-buffer SRD and table-pointer binding |
 | Indexed gear | Possibly | A validated indexed-draw builder; avoid it initially by expanding indices |
 | Correct overlapping gears | No known new import | Depth allocation, layout, descriptor/register block, clear and barriers |
 | Textured extensions | Useful new builder likely | Texture/sampler descriptors, resource residency and cache transitions |
@@ -32,12 +32,17 @@ Most remaining work does not require discovering a new NID.
   for Plasma because the existing SH-indirect path can update user registers.
 - `sceAgcSuspendPoint`: present in a public reference after submit. It is not
   required by our proven fence/event completion path and should remain optional.
-- An indexed-draw builder: useful for compact gear meshes, but not a gate; a
+- `sceAgcDcbDrawIndex` (`q88lQ+GP5Yk`), or the bound-index trio
+  `sceAgcDcbSetIndexBuffer` (`l4fM9K-Lyks`),
+  `sceAgcDcbSetIndexCount` (`8N2tmT3jmC8`) and
+  `sceAgcDcbDrawIndexOffset` (`B+aG9DUnTKA`): useful for compact gear meshes,
+  but not a gate; a
   first implementation can expand the index list and retain
   `sceAgcDcbDrawIndexAuto`.
-- `sceVideoOutGetFlipStatus`, `sceVideoOutWaitVblank` or an equivalent pacing
-  query: potentially useful for telemetry/pacing, but the existing exact flip
-  event is sufficient for correctness.
+- `sceVideoOutGetFlipStatus` (`SbU3dwp80lQ`) and
+  `sceVideoOutWaitVblank` (`j6RaAUlaLv0`): potentially useful for
+  telemetry/pacing, but the existing exact flip event is sufficient for
+  ownership correctness.
 
 ## Reverse-engineering priorities
 
@@ -68,6 +73,17 @@ for `gfx1013`; both produced relocation-free PAL ELFs with AMDGPU flags `0x42`.
   position and normal inputs cause PAL to request the compiler-defined vertex
   buffer table pointer (`0x1000000f`); the stage reports 20 user SGPRs.
 
-This narrows the next ABI investigation to the two vertex buffer descriptors
-and their table pointer. It does not require reverse engineering a general
-uniform subsystem.
+Public GFX10 PAL source and the resulting `gfx1013` ISA close the vertex side
+further:
+
+- both attributes share binding zero and one interleaved 24-byte vertex;
+- the shader loads exactly one 16-byte SRD, then fetches position and normal
+  using formats encoded in the shader instructions;
+- the SRD words are address-low, address-high plus stride, record count, and
+  the public GFX10 control word `0x11014fac`;
+- the SRD table is 16-byte aligned and its 32-bit GPU pointer occupies the
+  compiler-selected `VertexBufferTable` user register.
+
+Thus non-indexed Cube/Gears needs neither two descriptors nor a general uniform
+subsystem. The remaining hardware contract on the critical path is depth;
+indexed drawing and explicit VideoOut pacing remain optional refinements.
