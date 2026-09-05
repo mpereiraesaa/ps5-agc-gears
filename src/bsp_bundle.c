@@ -20,6 +20,7 @@ typedef struct ChunkView {
 
 _Static_assert(sizeof(BspBundleVertex) == 32u, "bundle vertex ABI");
 _Static_assert(sizeof(BspBundleDraw) == 32u, "bundle draw ABI");
+_Static_assert(sizeof(BspBundleImage) == 16u, "bundle image ABI");
 
 static uint32_t load_u32(const uint8_t *at)
 {
@@ -115,10 +116,14 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
     const ChunkView *vertex_chunk = 0;
     const ChunkView *index_chunk = 0;
     const ChunkView *draw_chunk = 0;
+    const ChunkView *lightmap_header_chunk = 0;
+    const ChunkView *lightmap_pixels_chunk = 0;
     for (uint32_t index = 0; index < chunk_count; ++index) {
         if (tag_equal(chunks[index].tag, "VERT")) vertex_chunk = &chunks[index];
         if (tag_equal(chunks[index].tag, "INDX")) index_chunk = &chunks[index];
         if (tag_equal(chunks[index].tag, "DRAW")) draw_chunk = &chunks[index];
+        if (tag_equal(chunks[index].tag, "LMHD")) lightmap_header_chunk = &chunks[index];
+        if (tag_equal(chunks[index].tag, "LMPX")) lightmap_pixels_chunk = &chunks[index];
     }
     if (!vertex_chunk || !index_chunk || !draw_chunk ||
         vertex_chunk->stride != sizeof(BspBundleVertex) ||
@@ -126,6 +131,24 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
         draw_chunk->stride != sizeof(BspBundleDraw) ||
         index_chunk->count % 3u != 0u)
         return BSP_BUNDLE_GEOMETRY_INVALID;
+    if (!!lightmap_header_chunk != !!lightmap_pixels_chunk)
+        return BSP_BUNDLE_GEOMETRY_INVALID;
+    if (lightmap_header_chunk) {
+        if (lightmap_header_chunk->count != 1u ||
+            lightmap_header_chunk->stride != sizeof(BspBundleImage) ||
+            lightmap_pixels_chunk->stride != 4u)
+            return BSP_BUNDLE_GEOMETRY_INVALID;
+        const BspBundleImage *const image =
+            (const BspBundleImage *)(data + lightmap_header_chunk->offset);
+        if (image->width == 0u || image->height == 0u ||
+            image->width > 2048u || image->height > 2048u ||
+            image->row_pitch != image->width * 4u ||
+            (image->row_pitch & 255u) != 0u ||
+            image->format != BSP_BUNDLE_IMAGE_RGBA8_UNORM ||
+            image->width > UINT32_MAX / image->height ||
+            image->width * image->height != lightmap_pixels_chunk->count)
+            return BSP_BUNDLE_GEOMETRY_INVALID;
+    }
 
     const uint32_t *const indices =
         (const uint32_t *)(data + index_chunk->offset);
@@ -140,6 +163,9 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
             draw->first_index > index_chunk->count ||
             draw->index_count > index_chunk->count - draw->first_index ||
             draw->reserved[0] != 0u || draw->reserved[1] != 0u ||
+            (!lightmap_header_chunk && draw->lightmap != UINT32_MAX) ||
+            (lightmap_header_chunk && draw->lightmap != 0u &&
+             draw->lightmap != UINT32_MAX) ||
             (index > 0u && (draw[-1].base_texture > draw->base_texture ||
              (draw[-1].base_texture == draw->base_texture &&
               draw[-1].face_id >= draw->face_id))))
@@ -154,6 +180,12 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
     view->index_count = index_chunk->count;
     view->draws = draws;
     view->draw_count = draw_chunk->count;
+    if (lightmap_header_chunk) {
+        view->lightmap_image = (const BspBundleImage *)(
+            data + lightmap_header_chunk->offset);
+        view->lightmap_pixels = data + lightmap_pixels_chunk->offset;
+        view->lightmap_pixel_count = lightmap_pixels_chunk->count;
+    }
     for (uint32_t vertex = 0; vertex < vertex_chunk->count; ++vertex) {
         const BspBundleVertex *const item = &view->vertices[vertex];
         for (unsigned component = 0; component < 3u; ++component)
@@ -163,6 +195,10 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
             if (!__builtin_isfinite(item->base_uv[component]) ||
                 !__builtin_isfinite(item->light_uv[component]))
                 return BSP_BUNDLE_GEOMETRY_INVALID;
+        if (lightmap_header_chunk &&
+            (item->light_uv[0] < 0.0f || item->light_uv[0] > 1.0f ||
+             item->light_uv[1] < 0.0f || item->light_uv[1] > 1.0f))
+            return BSP_BUNDLE_GEOMETRY_INVALID;
     }
     for (unsigned component = 0; component < 3u; ++component) {
         view->camera_position[component] = load_f32(data + 24u + component * 4u);

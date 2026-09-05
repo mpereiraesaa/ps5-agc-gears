@@ -35,8 +35,13 @@ int main(int argc, char **argv)
         free(data);
         return 1;
     }
-    printf("bundle valid: bytes=%zu vertices=%u indices=%u draws=%u\n",
+    printf("bundle valid: bytes=%zu vertices=%u indices=%u draws=%u",
            view.bytes, view.vertex_count, view.index_count, view.draw_count);
+    if (view.lightmap_image)
+        printf(" lightmap=%ux%u lightmap_pixels=%u",
+               view.lightmap_image->width, view.lightmap_image->height,
+               view.lightmap_pixel_count);
+    putchar('\n');
     free(data);
     return 0;
 }

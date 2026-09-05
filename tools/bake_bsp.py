@@ -26,6 +26,7 @@ LUMP_TEXTURES = 2
 LUMP_VERTICES = 3
 LUMP_TEXINFO = 6
 LUMP_FACES = 7
+LUMP_LIGHTING = 8
 LUMP_EDGES = 12
 LUMP_SURFEDGES = 13
 
@@ -36,11 +37,15 @@ CHUNK_HEADER = struct.Struct("<4sIIIIIII")
 VERTEX = struct.Struct("<3f2f2fI")
 DRAW = struct.Struct("<8I")
 INDEX = struct.Struct("<I")
+IMAGE = struct.Struct("<4I")
 
 MAX_INPUT_BYTES = 512 * 1024 * 1024
 MAX_FACES = 1_000_000
 MAX_FACE_EDGES = 4096
 PLAYER_EYE_HEIGHT = 28.0
+ATLAS_MAX_DIMENSION = 2048
+ATLAS_GUTTER = 1
+IMAGE_FORMAT_RGBA8_UNORM = 1
 
 
 class BakeError(ValueError):
@@ -65,6 +70,25 @@ class Face:
     first_surfedge: int
     surfedge_count: int
     texinfo: int
+    styles: tuple[int, int, int, int]
+    light_offset: int
+
+
+@dataclass(frozen=True)
+class FaceGeometry:
+    polygon: tuple[int, ...]
+    texture_min_s: int
+    texture_min_t: int
+    light_width: int
+    light_height: int
+
+
+@dataclass(frozen=True)
+class AtlasPlacement:
+    x: int
+    y: int
+    width: int
+    height: int
 
 
 @dataclass(frozen=True)
@@ -177,6 +201,138 @@ def _align(value: int, alignment: int = 16) -> int:
     return (value + alignment - 1) & -alignment
 
 
+def _next_power_of_two(value: int) -> int:
+    return 1 << max(0, value - 1).bit_length()
+
+
+def _pack_atlas(sizes: list[tuple[int, int]]) -> tuple[int, int, list[AtlasPlacement | None]]:
+    """Pack face lightmaps into deterministic shelves with one-texel gutters."""
+    if not sizes:
+        return 64, 1, []
+    largest = max(width + 2 * ATLAS_GUTTER for width, _height in sizes)
+    area = sum((width + 2 * ATLAS_GUTTER) *
+               (height + 2 * ATLAS_GUTTER) for width, height in sizes)
+    width = max(64, _next_power_of_two(max(largest, math.isqrt(area))))
+    while width <= ATLAS_MAX_DIMENSION:
+        placements: list[AtlasPlacement | None] = []
+        x = y = row_height = 0
+        failed = False
+        for item_width, item_height in sizes:
+            packed_width = item_width + 2 * ATLAS_GUTTER
+            packed_height = item_height + 2 * ATLAS_GUTTER
+            if packed_width > width:
+                failed = True
+                break
+            if x + packed_width > width:
+                x = 0
+                y += row_height
+                row_height = 0
+            if y + packed_height > ATLAS_MAX_DIMENSION:
+                failed = True
+                break
+            placements.append(AtlasPlacement(
+                x + ATLAS_GUTTER, y + ATLAS_GUTTER,
+                item_width, item_height,
+            ))
+            x += packed_width
+            row_height = max(row_height, packed_height)
+        if not failed:
+            height = max(1, y + row_height)
+            return width, height, placements
+        width *= 2
+    raise BakeError("lightmap atlas exceeds the 2048x2048 contract")
+
+
+def _face_geometry(face_index: int, face: Face,
+                   vertices: list[tuple[float, float, float]],
+                   edges: list[tuple[int, int]], surfedges: list[int],
+                   texture: TextureInfo) -> FaceGeometry:
+    if face.surfedge_count < 3 or face.surfedge_count > MAX_FACE_EDGES:
+        raise BakeError(f"face {face_index} has invalid edge count")
+    if face.first_surfedge < 0 or face.first_surfedge > len(surfedges) - face.surfedge_count:
+        raise BakeError(f"face {face_index} surfedge range is invalid")
+    polygon: list[int] = []
+    texture_s: list[float] = []
+    texture_t: list[float] = []
+    for surfedge in surfedges[face.first_surfedge:
+                              face.first_surfedge + face.surfedge_count]:
+        edge_index = abs(surfedge)
+        if edge_index >= len(edges):
+            raise BakeError(f"face {face_index} references an invalid edge")
+        vertex_index = edges[edge_index][0 if surfedge >= 0 else 1]
+        if vertex_index >= len(vertices):
+            raise BakeError(f"face {face_index} references an invalid vertex")
+        source = vertices[vertex_index]
+        if not all(math.isfinite(value) for value in source):
+            raise BakeError(f"face {face_index} has a non-finite vertex")
+        polygon.append(vertex_index)
+        texture_s.append(sum(source[i] * texture.s[i] for i in range(3)) + texture.s[3])
+        texture_t.append(sum(source[i] * texture.t[i] for i in range(3)) + texture.t[3])
+    minimum_s = math.floor(min(texture_s) / 16.0)
+    minimum_t = math.floor(min(texture_t) / 16.0)
+    maximum_s = math.ceil(max(texture_s) / 16.0)
+    maximum_t = math.ceil(max(texture_t) / 16.0)
+    light_width = maximum_s - minimum_s + 1
+    light_height = maximum_t - minimum_t + 1
+    if light_width <= 0 or light_height <= 0 or \
+            light_width > ATLAS_MAX_DIMENSION - 2 or \
+            light_height > ATLAS_MAX_DIMENSION - 2:
+        raise BakeError(f"face {face_index} has invalid lightmap extents")
+    return FaceGeometry(tuple(polygon), minimum_s * 16, minimum_t * 16,
+                        light_width, light_height)
+
+
+def _lightmap_atlas(faces: list[Face], geometry: list[FaceGeometry],
+                    lighting: bytes) -> tuple[bytes, bytes, list[AtlasPlacement | None]]:
+    lit_faces: list[int] = []
+    sizes: list[tuple[int, int]] = []
+    for face_index, (face, shape) in enumerate(zip(faces, geometry)):
+        style_count = next((index for index, style in enumerate(face.styles)
+                            if style == 255), len(face.styles))
+        if face.light_offset < 0:
+            continue
+        if style_count == 0:
+            raise BakeError(f"face {face_index} has light data without a style")
+        sample_bytes = shape.light_width * shape.light_height * 3
+        total_bytes = sample_bytes * style_count
+        if face.light_offset > len(lighting) or total_bytes > len(lighting) - face.light_offset:
+            raise BakeError(f"face {face_index} lightmap range is invalid")
+        lit_faces.append(face_index)
+        sizes.append((shape.light_width, shape.light_height))
+
+    atlas_width, atlas_height, packed = _pack_atlas(sizes)
+    pixels = bytearray([255]) * (atlas_width * atlas_height * 4)
+    placements: list[AtlasPlacement | None] = [None] * len(faces)
+    for face_index, placement in zip(lit_faces, packed):
+        assert placement is not None
+        placements[face_index] = placement
+        face = faces[face_index]
+        shape = geometry[face_index]
+        source = lighting[face.light_offset:face.light_offset +
+                          shape.light_width * shape.light_height * 3]
+        for row in range(shape.light_height):
+            for column in range(shape.light_width):
+                source_at = (row * shape.light_width + column) * 3
+                rgba = source[source_at:source_at + 3] + b"\xff"
+                target = ((placement.y + row) * atlas_width +
+                          placement.x + column) * 4
+                pixels[target:target + 4] = rgba
+        for row in range(-1, shape.light_height + 1):
+            source_row = min(max(row, 0), shape.light_height - 1)
+            for column in range(-1, shape.light_width + 1):
+                if 0 <= row < shape.light_height and 0 <= column < shape.light_width:
+                    continue
+                source_column = min(max(column, 0), shape.light_width - 1)
+                source_at = ((placement.y + source_row) * atlas_width +
+                             placement.x + source_column) * 4
+                target = ((placement.y + row) * atlas_width +
+                          placement.x + column) * 4
+                pixels[target:target + 4] = pixels[source_at:source_at + 4]
+    header = IMAGE.pack(atlas_width, atlas_height, atlas_width * 4,
+                        IMAGE_FORMAT_RGBA8_UNORM)
+    return header, bytes(pixels), placements
+
+
 def _chunk_bytes(chunks: list[Chunk], camera: tuple[float, float, float],
                  forward: tuple[float, float, float]) -> bytes:
     header_bytes = _align(BUNDLE_HEADER.size + len(chunks) * CHUNK_HEADER.size)
@@ -220,57 +376,66 @@ def bake(data: bytes) -> bytes:
     raw_faces = _records(data, lumps[LUMP_FACES], struct.Struct("<Hhihh4Bi"), "face")
     if len(raw_faces) > MAX_FACES:
         raise BakeError("face count exceeds the host baker limit")
-    faces = [Face(row[2], row[3], row[4]) for row in raw_faces]
+    faces = [Face(row[2], row[3], row[4], tuple(row[5:9]), row[9])
+             for row in raw_faces]
     texture_sizes = _parse_texture_sizes(data, lumps[LUMP_TEXTURES])
+    lighting = data[lumps[LUMP_LIGHTING].offset:
+                    lumps[LUMP_LIGHTING].offset + lumps[LUMP_LIGHTING].size]
     camera, forward = _spawn_camera(
         data[lumps[LUMP_ENTITIES].offset:
              lumps[LUMP_ENTITIES].offset + lumps[LUMP_ENTITIES].size])
+
+    geometry: list[FaceGeometry] = []
+    for face_index, face in enumerate(faces):
+        if face.texinfo < 0 or face.texinfo >= len(texinfo):
+            raise BakeError(f"face {face_index} texinfo is invalid")
+        texture = texinfo[face.texinfo]
+        if texture.miptex < 0 or texture.miptex >= len(texture_sizes):
+            raise BakeError(f"face {face_index} miptex is invalid")
+        geometry.append(_face_geometry(face_index, face, vertices, edges,
+                                       surfedges, texture))
+    light_header, light_pixels, light_placements = _lightmap_atlas(
+        faces, geometry, lighting)
+    atlas_width, atlas_height, _pitch, _format = IMAGE.unpack(light_header)
 
     vertex_blob = bytearray()
     index_blob = bytearray()
     draws: list[tuple[int, int, bytes]] = []
     emitted_vertices = 0
     emitted_indices = 0
-    for face_index, face in enumerate(faces):
-        if face.surfedge_count < 3 or face.surfedge_count > MAX_FACE_EDGES:
-            raise BakeError(f"face {face_index} has invalid edge count")
-        if face.first_surfedge < 0 or face.first_surfedge > len(surfedges) - face.surfedge_count:
-            raise BakeError(f"face {face_index} surfedge range is invalid")
-        if face.texinfo < 0 or face.texinfo >= len(texinfo):
-            raise BakeError(f"face {face_index} texinfo is invalid")
+    for face_index, (face, shape) in enumerate(zip(faces, geometry)):
         texture = texinfo[face.texinfo]
-        if texture.miptex < 0 or texture.miptex >= len(texture_sizes):
-            raise BakeError(f"face {face_index} miptex is invalid")
         width, height = texture_sizes[texture.miptex]
-        polygon: list[int] = []
-        for surfedge in surfedges[face.first_surfedge:
-                                  face.first_surfedge + face.surfedge_count]:
-            edge_index = abs(surfedge)
-            if edge_index >= len(edges):
-                raise BakeError(f"face {face_index} references an invalid edge")
-            vertex_index = edges[edge_index][0 if surfedge >= 0 else 1]
-            if vertex_index >= len(vertices):
-                raise BakeError(f"face {face_index} references an invalid vertex")
-            polygon.append(vertex_index)
 
         first_index = emitted_indices
-        for vertex_index in polygon:
+        placement = light_placements[face_index]
+        for vertex_index in shape.polygon:
             source = vertices[vertex_index]
-            if not all(math.isfinite(value) for value in source):
-                raise BakeError(f"face {face_index} has a non-finite vertex")
-            base_s = (sum(source[i] * texture.s[i] for i in range(3)) + texture.s[3]) / width
-            base_t = (sum(source[i] * texture.t[i] for i in range(3)) + texture.t[3]) / height
+            texture_s = sum(source[i] * texture.s[i] for i in range(3)) + texture.s[3]
+            texture_t = sum(source[i] * texture.t[i] for i in range(3)) + texture.t[3]
+            base_s = texture_s / width
+            base_t = texture_t / height
+            if placement is None:
+                light_s = 0.5 / atlas_width
+                light_t = 0.5 / atlas_height
+            else:
+                light_s = (placement.x +
+                           (texture_s - shape.texture_min_s) / 16.0 + 0.5) / atlas_width
+                light_t = (placement.y +
+                           (texture_t - shape.texture_min_t) / 16.0 + 0.5) / atlas_height
             converted = (source[0], source[2], -source[1])
-            vertex_blob += VERTEX.pack(*converted, base_s, base_t, 0.0, 0.0, face_index)
-        for corner in range(1, len(polygon) - 1):
+            vertex_blob += VERTEX.pack(*converted, base_s, base_t,
+                                       light_s, light_t, face_index)
+        for corner in range(1, len(shape.polygon) - 1):
             for local_index in (0, corner, corner + 1):
                 index_blob += INDEX.pack(emitted_vertices + local_index)
                 emitted_indices += 1
         index_count = emitted_indices - first_index
-        draw = DRAW.pack(first_index, index_count, texture.miptex, 0xFFFFFFFF,
+        draw = DRAW.pack(first_index, index_count, texture.miptex,
+                         0 if placement is not None else 0xFFFFFFFF,
                          face_index, 0, 0, 0)
         draws.append((texture.miptex, face_index, draw))
-        emitted_vertices += len(polygon)
+        emitted_vertices += len(shape.polygon)
 
     if not faces or emitted_indices == 0:
         raise BakeError("BSP contains no renderable faces")
@@ -280,6 +445,8 @@ def bake(data: bytes) -> bytes:
         Chunk(b"VERT", bytes(vertex_blob), emitted_vertices, VERTEX.size),
         Chunk(b"INDX", bytes(index_blob), emitted_indices, INDEX.size),
         Chunk(b"DRAW", draw_blob, len(draws), DRAW.size),
+        Chunk(b"LMHD", light_header, 1, IMAGE.size),
+        Chunk(b"LMPX", light_pixels, atlas_width * atlas_height, 4),
     ], camera, forward)
 
 

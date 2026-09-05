@@ -30,6 +30,15 @@ typedef struct BspBundleDraw {
     uint32_t reserved[2];
 } BspBundleDraw;
 
+enum { BSP_BUNDLE_IMAGE_RGBA8_UNORM = 1 };
+
+typedef struct BspBundleImage {
+    uint32_t width;
+    uint32_t height;
+    uint32_t row_pitch;
+    uint32_t format;
+} BspBundleImage;
+
 typedef struct BspBundleView {
     const void *data;
     size_t bytes;
@@ -39,6 +48,9 @@ typedef struct BspBundleView {
     uint32_t index_count;
     const BspBundleDraw *draws;
     uint32_t draw_count;
+    const BspBundleImage *lightmap_image;
+    const uint8_t *lightmap_pixels;
+    uint32_t lightmap_pixel_count;
     float camera_position[3];
     float camera_forward[3];
 } BspBundleView;

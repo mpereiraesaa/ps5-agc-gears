@@ -32,7 +32,9 @@ def tiny_bsp() -> bytes:
         (64.0, 64.0, 0.0), (0.0, 64.0, 0.0),
     ))
     texinfo = struct.pack("<8fii", 1, 0, 0, 0, 0, 1, 0, 0, 0, 0)
-    face = struct.pack("<Hhihh4Bi", 0, 0, 0, 4, 0, 0, 255, 255, 255, -1)
+    face = struct.pack("<Hhihh4Bi", 0, 0, 0, 4, 0, 0, 255, 255, 255, 0)
+    lighting = b"".join(bytes((value, value + 1, value + 2))
+                        for value in range(0, 75, 3))
     edges = b"".join(struct.pack("<2H", *edge) for edge in (
         (0, 1), (1, 2), (2, 3), (3, 0),
     ))
@@ -43,6 +45,7 @@ def tiny_bsp() -> bytes:
         BAKER.LUMP_VERTICES: vertices,
         BAKER.LUMP_TEXINFO: texinfo,
         BAKER.LUMP_FACES: face,
+        BAKER.LUMP_LIGHTING: lighting,
         BAKER.LUMP_EDGES: edges,
         BAKER.LUMP_SURFEDGES: surfedges,
     }
@@ -89,12 +92,12 @@ def main() -> int:
     second = BAKER.bake(source)
     assert first == second
     assert hashlib.sha256(first).hexdigest() == (
-        "0b44128ed0964676ddcd16e4078a7a086c131597abf60bd79de3adba7eeada71"
+        "a9be13086e5643b21bfba76b7815349461cca59e540ccc15b25f42722af37c5f"
     )
 
     header = BAKER.BUNDLE_HEADER.unpack_from(first)
     assert header[0] == BAKER.BUNDLE_MAGIC and header[1] == 1
-    assert header[3] == len(first) and header[11] == 3
+    assert header[3] == len(first) and header[11] == 5
     assert header[5:8] == (32.0, 36.0, -16.0)
     assert abs(header[8]) < 1e-6 and abs(header[9]) < 1e-6
     assert abs(header[10] + 1.0) < 1e-6
@@ -103,14 +106,19 @@ def main() -> int:
     assert directory[b"VERT"][2:] == (4, BAKER.VERTEX.size)
     assert directory[b"INDX"][2:] == (6, BAKER.INDEX.size)
     assert directory[b"DRAW"][2:] == (1, BAKER.DRAW.size)
+    assert directory[b"LMHD"][2:] == (1, BAKER.IMAGE.size)
+    assert directory[b"LMPX"][2:] == (448, 4)
     vertex_offset = directory[b"VERT"][0]
     assert BAKER.VERTEX.unpack_from(first, vertex_offset) == (
-        0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0,
+        0.0, 0.0, -0.0, 0.0, 0.0, 0.0234375,
+        0.2142857164144516, 0,
     )
     index_offset = directory[b"INDX"][0]
     assert struct.unpack_from("<6I", first, index_offset) == (0, 1, 2, 0, 2, 3)
     draw_offset = directory[b"DRAW"][0]
-    assert BAKER.DRAW.unpack_from(first, draw_offset)[:5] == (0, 6, 0, 0xFFFFFFFF, 0)
+    assert BAKER.DRAW.unpack_from(first, draw_offset)[:5] == (0, 6, 0, 0, 0)
+    light_header = BAKER.IMAGE.unpack_from(first, directory[b"LMHD"][0])
+    assert light_header == (64, 7, 256, BAKER.IMAGE_FORMAT_RGBA8_UNORM)
 
     wrong_version = bytearray(source)
     struct.pack_into("<I", wrong_version, 0, 29)
@@ -121,7 +129,12 @@ def main() -> int:
     must_fail(bytes(outside), "outside the file")
     no_spawn = source.replace(b"info_player_start", b"info_player_wrong")
     must_fail(no_spawn, "no player spawn")
-    print("BSP baker tests passed: deterministic bundle, fan indices, spawn transform")
+    bad_light = bytearray(source)
+    face_offset = struct.unpack_from("<I", source,
+                                     4 + BAKER.LUMP_FACES * 8)[0]
+    struct.pack_into("<i", bad_light, face_offset + 16, 1024)
+    must_fail(bytes(bad_light), "lightmap range")
+    print("BSP baker tests passed: deterministic geometry, spawn and lightmap atlas")
     return 0
 
 

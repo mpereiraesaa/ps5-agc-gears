@@ -17,6 +17,7 @@ tested, reusable interfaces.
 | Command allocation | Two fixed 4 KiB slots | Draw-count-sized, 64 KiB-aligned dual slots with separated fences | Overflow, offsets and capacity plan tests |
 | Flat map shader | Missing | Position + MVP + per-face color pipeline compiled and embedded beside Gears | GFX1013 PAL metadata, zero-relocation ELF and native-link checks |
 | Native fixed-camera frame | Missing | Private bundle load, dynamic command slots, indexed flat draws, two-buffer drain and readback | Hardware `ps5log/1` gate and Remote Play visual capture passed |
+| Lightmap atlas | Missing | First-style RGB light samples packed into a deterministic guttered RGBA8 atlas with normalized per-vertex UVs | Synthetic pixel/range regressions, C bundle validation and deterministic private-map bake |
 
 ## Gate 1 execution
 
@@ -142,3 +143,27 @@ and shows the camera at a visibly different map position. It reused the
 console's existing registered Chiaki entry; no pairing or reinitialization was
 performed. The title was closed by exact identity and all development services
 remained healthy.
+
+## Gate 3 lightmap atlas contract
+
+The baker derives each face's lightmap extents from its texture axes using the
+GoldSrc 16-unit luxel grid. It validates every referenced style span before
+reading the lighting lump, consumes the first style, and packs lit faces in
+face order into deterministic shelves. Every rectangle receives a duplicated
+one-texel gutter so later bilinear filtering cannot bleed between faces.
+
+`LMHD` records an RGBA8 atlas no larger than 2048x2048 with an exactly
+`width * 4`, 256-byte-aligned row pitch. `LMPX` contains the pixels and each
+vertex carries normalized texel-centre coordinates. Unlit faces retain the
+explicit `UINT32_MAX` lightmap sentinel and point at the atlas's white fallback.
+The C consumer rejects incomplete chunk pairs, invalid dimensions, formats,
+row pitches, draw references and UVs outside `[0, 1]` before exposing the GPU
+span.
+
+The private reference map bakes reproducibly to 2,424,944 bytes with a 512x799
+atlas containing 409,088 pixels. Two independent bakes produced SHA-256
+`6a44083b22545c29c787a3e136c6fedda3ced08b7ec191db365e83ab612cd0f5`.
+The map and generated bundle remain ignored private inputs. This gate
+establishes atlas correctness only; native sampling is introduced after the
+base-texture descriptor-table contract so the final shader can bind both
+resources together.
