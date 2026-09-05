@@ -35,6 +35,13 @@ docs/TELEMETRY.md
 sce_sys/icon0.png
 sce_sys/param.json
 shaders/gears_lit.pipe
+shaders/bsp_flat.pipe
+src/bsp_bundle.c
+src/bsp_bundle.h
+src/bsp_flat_draw.c
+src/bsp_flat_draw.h
+src/bsp_flat_scene.c
+src/bsp_flat_scene.h
 src/gears_mesh.c
 src/gears_mesh.h
 src/gears_frame_tracker.c
@@ -81,6 +88,8 @@ src/ps5_agc_submit.c
 src/ps5_agc_submit.h
 src/ps5_videoout.c
 src/ps5_videoout.h
+src/ps5_bump_allocator.c
+src/ps5_bump_allocator.h
 tests/test_gears_mesh.c
 tests/test_gears_frame_tracker.c
 tests/test_gears_frame_runner.c
@@ -107,6 +116,11 @@ tests/test_ps5_shader_header.c
 tests/test_ps5_agc_writer.c
 tests/test_ps5_agc_submit.c
 tests/test_ps5_videoout.c
+tests/test_bsp_bundle.c
+tests/test_bsp_flat_draw.c
+tests/test_bsp_flat_scene.c
+tests/test_ps5_bump_allocator.c
+tests/test_bake_bsp.py
 tests/test_shader_contract.py
 tests/test_build_shader.py
 tests/test_generate_agc_metadata.py
@@ -116,3 +130,5 @@ tools/build_shader.py
 tools/generate_agc_metadata.py
 tools/package_release.sh
 tools/build_native.sh
+tools/bake_bsp.py
+docs/BSP_VIEWER_PHASE1.md

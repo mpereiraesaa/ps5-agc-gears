@@ -31,7 +31,23 @@ def main() -> int:
     for value in forbidden:
         if value in text:
             raise SystemExit(f"shader source contains forbidden value: {value}")
-    print("shader source contract passed: gfx1013 compiler input, 24+1 DWORD ABI")
+    flat = (ROOT / "shaders/bsp_flat.pipe").read_text(encoding="utf-8")
+    flat_required = (
+        "layout(location = 0) in vec3 in_position;",
+        "mat4 mvp;",
+        "vec4 face_color;",
+        "userDataNode[0].sizeInDwords = 20",
+        "userDataNode[1].offsetInDwords = 20",
+        "binding[0].stride = 32",
+        "topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST",
+    )
+    for value in flat_required:
+        if flat.count(value) != 1:
+            raise SystemExit(f"BSP flat shader contract is missing: {value}")
+    for value in forbidden:
+        if value in flat:
+            raise SystemExit(f"BSP flat shader contains forbidden value: {value}")
+    print("shader source contract passed: gears 24+1 and BSP flat 20+1 DWORD ABIs")
     return 0
 
 

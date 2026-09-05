@@ -21,6 +21,17 @@ int ps5_native_draw_auto(uint32_t **cursor, uint32_t capacity,
                                     sceAgcDcbDrawIndexAuto);
 }
 
+int ps5_native_draw_index(uint32_t **cursor, uint32_t capacity,
+                          uint32_t index_count, const uint32_t *gpu_indices,
+                          const void *gpu_mapping, size_t gpu_mapping_bytes,
+                          uint64_t modifier)
+{
+    return ps5_agc_writer_draw_index(cursor, capacity, index_count,
+                                     gpu_indices, gpu_mapping,
+                                     gpu_mapping_bytes, modifier,
+                                     sceAgcDcbDrawIndex);
+}
+
 int ps5_native_set_sh_direct(uint32_t **cursor, uint32_t capacity,
                              uint32_t offset, const uint32_t *values,
                              uint32_t count)

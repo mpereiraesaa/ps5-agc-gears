@@ -72,6 +72,26 @@ int ps5_agc_writer_draw_auto(
     return finish_writer(cursor, &writer, 3u, 3u);
 }
 
+int ps5_agc_writer_draw_index(
+    uint32_t **cursor, uint32_t capacity, uint32_t index_count,
+    const uint32_t *gpu_indices, const void *gpu_mapping,
+    size_t gpu_mapping_bytes, uint64_t modifier,
+    ps5_agc_emit_draw_index_fn emit)
+{
+    struct ps5_agc_command_buffer writer;
+    if (!emit || !gpu_indices || index_count == 0u ||
+        index_count % 3u != 0u ||
+        ((uintptr_t)gpu_indices & (sizeof(uint32_t) - 1u)) != 0u ||
+        capacity < 6u ||
+        begin_writer(&writer, cursor, capacity) != PS5_AGC_WRITER_OK)
+        return PS5_AGC_WRITER_PRECONDITION;
+    if (!ps5_gpu_span_visible(gpu_mapping, gpu_mapping_bytes, gpu_indices,
+                              (size_t)index_count * sizeof(uint32_t)))
+        return PS5_AGC_WRITER_NOT_GPU_VISIBLE;
+    (void)emit(&writer, index_count, gpu_indices, modifier);
+    return finish_writer(cursor, &writer, 6u, 6u);
+}
+
 int ps5_agc_writer_set_sh_direct(
     uint32_t **cursor, uint32_t capacity, uint32_t compact_offset,
     const uint32_t *values, uint32_t count, ps5_agc_emit_sh_direct_fn emit)
