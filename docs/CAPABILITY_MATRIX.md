@@ -111,3 +111,20 @@ this block initializes all depth state: public PAL also manages render-control,
 override, cache-policy, polygon-offset and HTILE-surface registers around the
 view. The first implementation will therefore use the uncompressed/no-HTILE
 path only after its allocation/swizzle and surrounding defaults are validated.
+
+## Frame ownership contract
+
+No additional pacing import is required for the first animation loop. Two
+independent conditions govern reuse:
+
+1. the terminal GPU fence completes before command, shader or vertex memory is
+   reset;
+2. the exact VideoOut flip event returns the submitted `flipArg` before its
+   display buffer is rendered into again.
+
+Use a monotonic positive 48-bit token per frame and retain one owner token per
+backbuffer. `sceVideoOutWaitVblank` can regulate CPU production and
+`sceVideoOutGetFlipStatus` can provide telemetry/fallback, but neither proves
+GPU completion and neither replaces the terminal fence. Animation time should
+come from a monotonic clock rather than assuming one event equals one fixed
+duration.
