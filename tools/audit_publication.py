@@ -17,8 +17,8 @@ TEXT_SUFFIXES = {
 PINNED_BINARY_SHA256 = {
     "assets/branding/icon-master.png":
         "50accc91e38822a8b11cb6eed916d968184edb8306a1099fc3d2aa0a72b402b0",
-    "assets/screenshots/ps5-agc-gears-hardware.jpg":
-        "98951df32e3536681ee3cd29d65b99f44a572f5728922e1b3a0b016477dc2048",
+    "assets/screenshots/ps5-agc-gears-hardware.png":
+        "484e6830835386eee439df6ecec46fa18fa3d8b08780ad56b8aa0b5245f06905",
     "sce_sys/icon0.png":
         "cc40f50deb429e8bcf07eb43be5a3176c4f8445a88e045e830b066202b66efb8",
 }

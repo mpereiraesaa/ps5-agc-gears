@@ -5,12 +5,12 @@ PlayStation 5 homebrew.** It drives the **PS5 GPU** through AGC, the console's
 low-level graphics interface, using independently authored `gfx1013` shaders.
 
 <p align="center">
-  <img src="assets/screenshots/ps5-agc-gears-hardware.jpg"
+  <img src="assets/screenshots/ps5-agc-gears-hardware.png"
        width="680"
        alt="Three hardware-accelerated gears rendered by AGC Gears on a PlayStation 5">
 </p>
 
-<p align="center"><em>AGC Gears running on real PS5 hardware (FW 12.02).</em></p>
+<p align="center"><em>Direct Remote Play capture from AGC Gears running on real PS5 hardware (FW 12.02).</em></p>
 
 The project follows the tradition of Mesa's
 [`glxgears`](https://gitlab.freedesktop.org/mesa/demos/-/blob/main/src/xdemos/glxgears.c)
