@@ -87,3 +87,27 @@ further:
 Thus non-indexed Cube/Gears needs neither two descriptors nor a general uniform
 subsystem. The remaining hardware contract on the critical path is depth;
 indexed drawing and explicit VideoOut pacing remain optional refinements.
+
+## Public depth register map
+
+The 16-entry depth-target block has now been cross-checked exhaustively against
+AMD's public GFX10 PAL register table. Each compact ID is exactly the register's
+context-space offset from `0xa000`:
+
+| ID | Public GFX10 register | ID | Public GFX10 register |
+|---:|---|---:|---|
+| `02` | `DB_DEPTH_VIEW` | `10` | `DB_Z_INFO` |
+| `05` | `DB_HTILE_DATA_BASE` | `11` | `DB_STENCIL_INFO` |
+| `07` | `DB_DEPTH_SIZE_XY` | `12` | `DB_Z_READ_BASE` |
+| `0a` | `DB_STENCIL_CLEAR` | `13` | `DB_STENCIL_READ_BASE` |
+| `0b` | `DB_DEPTH_CLEAR` | `14` | `DB_Z_WRITE_BASE` |
+| `1a` | `DB_Z_READ_BASE_HI` | `15` | `DB_STENCIL_WRITE_BASE` |
+| `1b` | `DB_STENCIL_READ_BASE_HI` | `1c` | `DB_Z_WRITE_BASE_HI` |
+| `1d` | `DB_STENCIL_WRITE_BASE_HI` | `1e` | `DB_HTILE_DATA_BASE_HI` |
+
+This identifies all five split 48-bit addresses, the two clear values, surface
+dimensions and format/control words. It does not by itself prove that writing
+this block initializes all depth state: public PAL also manages render-control,
+override, cache-policy, polygon-offset and HTILE-surface registers around the
+view. The first implementation will therefore use the uncompressed/no-HTILE
+path only after its allocation/swizzle and surrounding defaults are validated.
