@@ -252,10 +252,12 @@ passes that validator.
 
 On the reference Ubuntu/PS5 setup, Chiaki owns interactive input while its
 Remote Play session is open and maps the workstation keyboard to the console.
-Taking the physical DualSense to play directly on the PS5 closes that Chiaki
-session and transfers control to the console. Consequently, visual capture and
-physical-controller exercise are deliberately sequential: inspect or capture
-through the already registered Chiaki entry, then let the operator take the
-DualSense and judge the remaining soak through `ps5log/1`. If a moved-camera
-Remote Play image is required, reconnect the same registered entry after the
-finite run. This workflow never pairs, re-registers or synthesizes input.
+Taking the physical DualSense to play directly on the PS5 closes only the
+`Chiaki | Stream` session/window and transfers control to the console; the main
+Chiaki client remains open and can start streaming again through the existing
+registered console entry. Consequently, visual capture and physical-controller
+exercise are deliberately sequential: inspect or capture through the stream,
+then let the operator take the DualSense and judge the remaining soak through
+`ps5log/1`. If a moved-camera Remote Play image is required, start the stream
+again from the still-open client after the finite run. This workflow never
+pairs, re-registers or synthesizes input.
