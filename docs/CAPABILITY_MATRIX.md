@@ -43,6 +43,13 @@ Most remaining work does not require discovering a new NID.
   `sceVideoOutWaitVblank` (`j6RaAUlaLv0`): potentially useful for
   telemetry/pacing, but the existing exact flip event is sufficient for
   ownership correctness.
+- `sceAgcDcbAcquireMem` (`57labkp+rSQ`), `sceAgcCbReleaseMem`
+  (`wr23dPKyWc0`), `sceAgcDcbEventWrite` (`aJf+j5yntiU`),
+  `sceAgcDcbWriteData` (`i1jyy49AjXU`) and `sceAgcDcbWaitRegMem`
+  (`VmW0Tdpy420`) are the public synchronization candidates for later depth
+  clears/transitions. They are not interchangeable: event/ACQUIRE controls
+  cache or pipeline visibility, while the terminal release label proves
+  completion and ownership.
 
 ## Reverse-engineering priorities
 
