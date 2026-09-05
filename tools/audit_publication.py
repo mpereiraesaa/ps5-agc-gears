@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
-"""Fail-closed audit for the future standalone public repository."""
+"""Fail-closed audit for the standalone public repository."""
 
 from __future__ import annotations
 
 import ipaddress
 import re
+import subprocess
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWLIST = ROOT / "PUBLICATION_ALLOWLIST.txt"
-TEXT_SUFFIXES = {"", ".json", ".md", ".py", ".txt"}
+TEXT_SUFFIXES = {
+    "", ".c", ".example", ".h", ".json", ".md", ".pipe", ".py", ".s", ".sh", ".txt", ".yml"
+}
 PINNED_BINARY_SHA256 = {
     "assets/branding/icon-master.png":
         "50accc91e38822a8b11cb6eed916d968184edb8306a1099fc3d2aa0a72b402b0",
     "sce_sys/icon0.png":
         "cc40f50deb429e8bcf07eb43be5a3176c4f8445a88e045e830b066202b66efb8",
 }
-FORBIDDEN_PARTS = {
-    ".deps", "build", "captures", "dist", "dumps", "ghidra", "sessions",
-}
+GENERATED_ROOTS = {".deps", "build", "dist", "release"}
+FORBIDDEN_PARTS = {"captures", "dumps", "ghidra", "sessions"}
 FORBIDDEN_TERMS = (
     "/home/" + "manuel/",
     "/data/homebrew/" + "PPSA99998",
@@ -33,6 +35,15 @@ def fail(message: str) -> None:
 
 
 def main() -> int:
+    for name in GENERATED_ROOTS:
+        path = ROOT / name
+        if path.exists():
+            ignored = subprocess.run(
+                ["git", "check-ignore", "--quiet", "--", name],
+                cwd=ROOT, check=False,
+            )
+            if ignored.returncode != 0:
+                fail(f"generated path is not git-ignored: {name}")
     allowed = {
         line.strip() for line in ALLOWLIST.read_text().splitlines()
         if line.strip() and not line.lstrip().startswith("#")
@@ -41,6 +52,8 @@ def main() -> int:
     for path in ROOT.rglob("*"):
         relative = path.relative_to(ROOT)
         if ".git" in relative.parts:
+            continue
+        if relative.parts and relative.parts[0] in GENERATED_ROOTS:
             continue
         if any(part in FORBIDDEN_PARTS or part == "__pycache__"
                for part in relative.parts):
@@ -73,7 +86,7 @@ def main() -> int:
                 address = ipaddress.ip_address(candidate)
             except ValueError:
                 continue
-            if address.is_private:
+            if address.is_private and not address.is_loopback:
                 fail(f"private IP address in {name}")
     missing = allowed - observed
     if missing:

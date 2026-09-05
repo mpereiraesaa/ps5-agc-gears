@@ -1,7 +1,9 @@
 .deps/
 .env
+dev.conf
 build/
 dist/
+release/
 *.elf
 *.o
 *.prx

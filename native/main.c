@@ -1,0 +1,679 @@
+#include "../include/ps5_agc.h"
+#include "../include/ps5_agc_driver.h"
+#include "../include/ps5_platform.h"
+#include "../src/gears_frame_runner.h"
+#include "../src/gears_mesh.h"
+#include "../src/gears_renderer.h"
+#include "../src/gears_rt_clear.h"
+#include "../src/ps5_agc_submit.h"
+#include "../src/ps5_color_target.h"
+#include "../src/ps5_depth_target.h"
+#include "../src/ps5_event_adapter.h"
+#include "../src/ps5_pipeline.h"
+#include "../src/ps5_shader_header.h"
+#include "../src/ps5_submission.h"
+#include "../src/ps5_surface.h"
+#include "../src/ps5_videoout.h"
+#include "ps5_agc_native.h"
+#include "ps5log/ps5log.h"
+#include "gears_shader_metadata.h"
+
+#include <signal.h>
+#include <stdint.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+
+extern const uint8_t ps5_gears_gs_start[], ps5_gears_gs_end[];
+extern const uint8_t ps5_gears_ps_start[], ps5_gears_ps_end[];
+
+enum {
+    AGC_MODULE = 0x80000094u,
+    COMMAND_BYTES = 0x20000u,
+    COMMAND_ALIGNMENT = 0x10000u,
+    COMMAND_SLOT_BYTES = 0x1000u,
+    FENCE0_OFFSET = 0x1100u,
+    FENCE1_OFFSET = 0x1200u,
+    SHADER_BYTES = 0x40000u,
+    SHADER_ALIGNMENT = 0x4000u,
+    GS_HEADER_OFFSET = 0x0000u,
+    PS_HEADER_OFFSET = 0x0200u,
+    GS_CODE_OFFSET = 0x1000u,
+    PS_CODE_OFFSET = 0x1200u,
+    LINKED_CX_OFFSET = 0x2000u,
+    LINKED_UC_OFFSET = 0x2200u,
+    PIPELINE_OFFSET = 0x3000u,
+    DEPTH_REGISTERS_OFFSET = 0x3e00u,
+    GEAR0_OFFSET = 0x4000u,
+    GEAR1_OFFSET = 0x10000u,
+    GEAR2_OFFSET = 0x16000u,
+    GEAR_SRD_OFFSET = 0x1c000u,
+    CLEAR_SRD_OFFSET = 0x1c100u,
+    CLEAR_VERTEX_OFFSET = 0x1c200u,
+    SHADER_FOOTER_BYTES = 0x30u,
+    DEPTH_BYTES = 0x870000u,
+    DEPTH_ALLOCATION_BYTES = 0x900000u,
+    DEPTH_ALIGNMENT = 0x10000u,
+    GUARD_WORD = 0x51a6c3d9u,
+};
+
+struct native_resources {
+    uint64_t agc_state;
+    void *command;
+    int64_t command_offset;
+    void *framebuffer;
+    int64_t framebuffer_offset;
+    void *shader;
+    int64_t shader_offset;
+    void *depth;
+    int64_t depth_offset;
+    struct ps5_videoout video;
+    struct ps5_surface_plan surface;
+    int agc_loaded;
+    int command_reserved;
+    int command_allocated;
+    int command_mapped;
+    int framebuffer_allocated;
+    int framebuffer_mapped;
+    int shader_allocated;
+    int shader_mapped;
+    int depth_allocated;
+    int depth_mapped;
+};
+
+struct native_renderer {
+    uint32_t *commands[2];
+    uint32_t *cursor[2];
+    volatile uint64_t *fences[2];
+    struct ps5_pipeline_registers *pipelines[2];
+    ps5_agc_register *depth_registers;
+    GearsSceneDraw clear_draw;
+    uint32_t srd_tables[GEARS_SCENE_DRAW_COUNT];
+    uint32_t vertex_counts[GEARS_SCENE_DRAW_COUNT];
+    uint64_t draw_modifier;
+    struct ps5_agc_submit_context submit;
+    struct native_resources *resources;
+    int transaction_started;
+};
+
+static struct native_resources resources;
+static struct native_renderer renderer;
+
+static uint64_t now_ns(void *unused)
+{
+    struct timespec value = {0, 0};
+    (void)unused;
+    (void)clock_gettime(CLOCK_MONOTONIC, &value);
+    return (uint64_t)value.tv_sec * UINT64_C(1000000000) +
+           (uint64_t)value.tv_nsec;
+}
+
+static void log_result(const char *name, int result)
+{
+    (void)ps5log_printf(result == 0 ? PS5LOG_INFO : PS5LOG_ERR,
+                        "%s=0x%08x", name, (uint32_t)result);
+}
+
+static int allocate_direct(void **address, int64_t *offset, size_t bytes,
+                           size_t alignment)
+{
+    int result = sceKernelAllocateMainDirectMemory(bytes, alignment, 0x0c,
+                                                    offset);
+    if (result != 0)
+        return result;
+    result = sceKernelMapDirectMemory(address, bytes, 0x33, 0, *offset,
+                                      alignment);
+    return result != 0 || !*address ? (result != 0 ? result : -1) : 0;
+}
+
+static int map_command(void)
+{
+    int result = sceKernelReserveVirtualRange(&resources.command,
+                                               COMMAND_BYTES, 0,
+                                               COMMAND_ALIGNMENT);
+    if (result != 0 || !resources.command)
+        return result != 0 ? result : -1;
+    resources.command_reserved = 1;
+    result = sceKernelAllocateMainDirectMemory(COMMAND_BYTES,
+                                                COMMAND_ALIGNMENT, 0x0c,
+                                                &resources.command_offset);
+    if (result != 0)
+        return result;
+    resources.command_allocated = 1;
+    struct ps5_batch_map_entry entry = {
+        resources.command, resources.command_offset, COMMAND_BYTES,
+        0xf2, 0x0c, 0, 0
+    };
+    int processed = -1;
+    result = sceKernelBatchMap(&entry, 1, &processed);
+    if (result != 0 || processed != 1)
+        return result != 0 ? result : -1;
+    resources.command_mapped = 1;
+    memset(resources.command, 0, COMMAND_BYTES);
+    return 0;
+}
+
+static const struct ps5_videoout_ops video_ops = {
+    sceVideoOutOpen, sceVideoOutClose, sceVideoOutSetFlipRate,
+    sceKernelCreateEqueue, sceKernelDeleteEqueue,
+    sceVideoOutAddFlipEvent, sceVideoOutDeleteFlipEvent,
+    sceVideoOutSetBufferAttribute2, sceVideoOutRegisterBuffers2,
+    sceVideoOutUnregisterBuffers
+};
+
+static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
+{
+    struct native_renderer *state = opaque;
+    if (!frame || !state || frame->buffer >= 2u)
+        return -1;
+    uint32_t *const begin = state->commands[frame->buffer];
+    uint32_t *const end = begin + COMMAND_SLOT_BYTES / sizeof(uint32_t);
+    uint32_t *cursor = begin;
+    memset(begin, 0, COMMAND_SLOT_BYTES);
+    int result = ps5_native_wait_rendering(
+        &cursor, (uint32_t)(end - cursor), 0u,
+        state->resources->video.handle, (int32_t)frame->buffer);
+    if (result != 0)
+        return -10;
+    result = ps5_native_fill_depth(
+        &cursor, (uint32_t)(end - cursor), state->resources->depth,
+        UINT32_C(0x3f800000), DEPTH_BYTES, state->resources->depth,
+        DEPTH_ALLOCATION_BYTES);
+    if (result != 0)
+        return -11;
+    result = ps5_native_set_indirect(
+        &cursor, (uint32_t)(end - cursor), state->depth_registers,
+        PS5_DEPTH_REGISTER_COUNT, state->resources->shader, SHADER_BYTES,
+        PS5_NATIVE_REGISTERS_CX);
+    if (result != 0)
+        return -12;
+    struct ps5_pipeline_registers *pipeline = state->pipelines[frame->buffer];
+    result = ps5_native_set_indirect(
+        &cursor, (uint32_t)(end - cursor), pipeline->cx,
+        PS5_PIPELINE_CX_REGISTERS, state->resources->shader, SHADER_BYTES,
+        PS5_NATIVE_REGISTERS_CX);
+    if (result != 0)
+        return -13;
+    result = ps5_native_set_indirect(
+        &cursor, (uint32_t)(end - cursor), pipeline->uc,
+        PS5_PIPELINE_UC_REGISTERS, state->resources->shader, SHADER_BYTES,
+        PS5_NATIVE_REGISTERS_UC);
+    if (result != 0)
+        return -14;
+    result = ps5_native_set_indirect(
+        &cursor, (uint32_t)(end - cursor), pipeline->sh,
+        PS5_PIPELINE_SH_REGISTERS, state->resources->shader, SHADER_BYTES,
+        PS5_NATIVE_REGISTERS_SH);
+    if (result != 0)
+        return -15;
+    GearsRendererComposeResult composed = {0, 0};
+    result = gears_renderer_compose_frame(
+        &cursor, end, &state->clear_draw, frame->draws,
+        state->draw_modifier, ps5_native_set_sh_direct,
+        ps5_native_draw_auto, &composed);
+    if (result != 0 || composed.draws != 4u ||
+        composed.command_dwords != 120u)
+        return -16;
+    state->cursor[frame->buffer] = cursor;
+    return 0;
+}
+
+static int frame_submit(const GearsAnimationFrame *frame, void *opaque)
+{
+    struct native_renderer *state = opaque;
+    if (!frame || !state || frame->buffer >= 2u ||
+        !state->cursor[frame->buffer])
+        return -1;
+    const unsigned slot = frame->buffer;
+    struct ps5_present_stream stream = {
+        state->commands[slot],
+        state->commands[slot] + COMMAND_SLOT_BYTES / sizeof(uint32_t),
+        state->cursor[slot], 0
+    };
+    struct ps5_submission_input input = {
+        &stream, ps5_native_set_flip, ps5_agc_submit_checked, &state->submit,
+        state->fences[slot], state->resources->video.handle, (int32_t)slot,
+        state->resources->surface.flip_mode, frame->token, 1, 1, 1
+    };
+    struct ps5_submission_state submitted;
+    state->transaction_started = 1;
+    const int result = ps5_submission_build_and_submit(&input, &submitted);
+    if (result != PS5_SUBMISSION_OK || !submitted.submit_called ||
+        !submitted.retain_all_resources)
+        return result != 0 ? result : -2;
+    state->cursor[slot] = stream.cursor;
+    return 0;
+}
+
+static int frame_wait_gpu(const GearsAnimationFrame *frame, void *opaque)
+{
+    struct native_renderer *state = opaque;
+    if (!frame || !state || frame->buffer >= 2u)
+        return -1;
+    const uint64_t deadline = now_ns(0) + UINT64_C(2000000000);
+    while (__atomic_load_n(state->fences[frame->buffer], __ATOMIC_ACQUIRE) !=
+               0u && now_ns(0) < deadline) {
+        const struct timespec delay = {0, 1000000};
+        (void)nanosleep(&delay, 0);
+    }
+    return __atomic_load_n(state->fences[frame->buffer], __ATOMIC_ACQUIRE) ==
+                   0u ? 0 : -1;
+}
+
+static int frame_wait_video(const GearsAnimationFrame *frame,
+                            uint64_t *observed_token, void *opaque)
+{
+    struct native_renderer *state = opaque;
+    if (!frame || !state || !observed_token || frame->buffer >= 2u)
+        return -1;
+    struct ps5_frame_completion completion;
+    if (ps5_frame_completion_begin(&completion, frame->token, 1) !=
+        PS5_FRAME_WAITING)
+        return -2;
+    uint64_t event_storage[4] = {0, 0, 0, 0};
+    struct ps5_event_diagnostics diagnostics = {0};
+    const uint64_t deadline = now_ns(0) + UINT64_C(2000000000);
+    for (;;) {
+        const int expired = now_ns(0) >= deadline;
+        const struct ps5_event_poll poll = {
+            state->resources->video.equeue, event_storage,
+            state->fences[frame->buffer], 10000u, 0, expired,
+            sceKernelWaitEqueue, sceVideoOutGetEventData, &diagnostics
+        };
+        const int result = ps5_event_poll_completion(&completion, &poll);
+        if (result == PS5_FRAME_DONE) {
+            *observed_token = frame->token;
+            return 0;
+        }
+        if (result < 0)
+            return result;
+    }
+}
+
+static void frame_telemetry(uint64_t frame,
+                            const GearsTelemetrySnapshot *snapshot,
+                            int terminal_error, void *opaque)
+{
+    (void)opaque;
+    if (!snapshot)
+        return;
+    (void)ps5log_printf(terminal_error ? PS5LOG_ERR : PS5LOG_INFO,
+        "GEARS_FRAME frame=%llu completed=%llu compose_avg_ns=%llu "
+        "gpu_wait_avg_ns=%llu video_wait_avg_ns=%llu deadline_misses=%llu "
+        "errors=%llu terminal=%d",
+        (unsigned long long)frame,
+        (unsigned long long)snapshot->frames_completed,
+        (unsigned long long)snapshot->compose_ns_average,
+        (unsigned long long)snapshot->gpu_wait_ns_average,
+        (unsigned long long)snapshot->video_wait_ns_average,
+        (unsigned long long)snapshot->deadline_misses,
+        (unsigned long long)snapshot->errors, terminal_error);
+}
+
+static int guards_intact(void)
+{
+    const uint64_t footprint = resources.surface.tiled_footprint;
+    const uint64_t offsets[3] = {
+        footprint,
+        PS5_SURFACE_BUFFER_STRIDE - 64u,
+        PS5_SURFACE_BUFFER_STRIDE + footprint,
+    };
+    for (unsigned zone = 0; zone < 3u; ++zone) {
+        const volatile uint32_t *guard = (const volatile uint32_t *)(
+            (const uint8_t *)resources.framebuffer + offsets[zone]);
+        for (unsigned word = 0; word < 16u; ++word)
+            if (guard[word] != GUARD_WORD)
+                return 0;
+    }
+    const volatile uint32_t *depth_guard = (const volatile uint32_t *)(
+        (const uint8_t *)resources.depth + DEPTH_BYTES);
+    for (unsigned word = 0; word < 16u; ++word)
+        if (depth_guard[word] != GUARD_WORD)
+            return 0;
+    return 1;
+}
+
+static int cleanup(void)
+{
+    int result;
+    if (resources.video.handle >= 0) {
+        result = ps5_videoout_close(&resources.video, &video_ops);
+        log_result("videoout_close_chain", result);
+        if (result != 0)
+            return result;
+    }
+    if (resources.framebuffer_mapped &&
+        (result = sceKernelMunmap(resources.framebuffer,
+                                  PS5_SURFACE_ALLOCATION_BYTES)) != 0)
+        return result;
+    resources.framebuffer_mapped = 0;
+    if (resources.framebuffer_allocated &&
+        (result = sceKernelReleaseDirectMemory(resources.framebuffer_offset,
+                         PS5_SURFACE_ALLOCATION_BYTES)) != 0)
+        return result;
+    resources.framebuffer_allocated = 0;
+    if (resources.depth_mapped &&
+        (result = sceKernelMunmap(resources.depth,
+                                  DEPTH_ALLOCATION_BYTES)) != 0)
+        return result;
+    resources.depth_mapped = 0;
+    if (resources.depth_allocated &&
+        (result = sceKernelReleaseDirectMemory(resources.depth_offset,
+                                                DEPTH_ALLOCATION_BYTES)) != 0)
+        return result;
+    resources.depth_allocated = 0;
+    if (resources.shader_mapped &&
+        (result = sceKernelMunmap(resources.shader, SHADER_BYTES)) != 0)
+        return result;
+    resources.shader_mapped = 0;
+    if (resources.shader_allocated &&
+        (result = sceKernelReleaseDirectMemory(resources.shader_offset,
+                                                SHADER_BYTES)) != 0)
+        return result;
+    resources.shader_allocated = 0;
+    if (resources.command_mapped) {
+        struct ps5_batch_map_entry entry = {
+            resources.command, 0, COMMAND_BYTES, 0xf2, 0x0c, 0, 1
+        };
+        int processed = -1;
+        result = sceKernelBatchMap(&entry, 1, &processed);
+        if (result != 0 || processed != 1)
+            return result != 0 ? result : -1;
+        resources.command_mapped = 0;
+    }
+    if (resources.command_allocated &&
+        (result = sceKernelReleaseDirectMemory(resources.command_offset,
+                                                COMMAND_BYTES)) != 0)
+        return result;
+    resources.command_allocated = 0;
+    if (resources.command_reserved &&
+        (result = sceKernelMunmap(resources.command, COMMAND_BYTES)) != 0)
+        return result;
+    resources.command_reserved = 0;
+    if (resources.agc_loaded &&
+        (result = sceSysmoduleUnloadModuleInternal(AGC_MODULE)) != 0)
+        return result;
+    resources.agc_loaded = 0;
+    return 0;
+}
+
+static void park(const char *reason)
+{
+    (void)ps5log_printf(PS5LOG_ERR, "PARKED retain_all_resources=true reason=%s",
+                        reason ? reason : "unknown");
+    ps5log_close("parked-retain");
+    for (;;)
+        (void)pause();
+}
+
+static int fail_pre_submit(const char *step, int result)
+{
+    log_result(step, result);
+    const int cleanup_result = cleanup();
+    log_result("pre_submit_cleanup", cleanup_result);
+    ps5log_close("pre-submit-failure");
+    return result != 0 ? result : -1;
+}
+
+int main(void)
+{
+    memset(&resources, 0, sizeof(resources));
+    resources.command_offset = resources.framebuffer_offset =
+        resources.shader_offset = resources.depth_offset = -1;
+    resources.video.handle = -1;
+    ps5log_config log_config;
+    const char *log_path = 0;
+    const uint64_t boot_token = now_ns(0);
+    ps5log_config_defaults(&log_config);
+    const int config_result = ps5log_load_config(
+        ps5log_default_conf_paths, ps5log_default_conf_path_count,
+        &log_config, &log_path);
+    const int log_result = config_result == 0
+        ? ps5log_init(&log_config, "PPSA99997", "ps5-agc-gears", boot_token)
+        : 1;
+    (void)ps5log_line(PS5LOG_INFO, "LOG_SCHEMA=3");
+    (void)ps5log_line(PS5LOG_INFO,
+                      "LOG_TRANSPORT=ps5log/1 tcp structured");
+    (void)ps5log_line(PS5LOG_INFO, "LOG_FS_SINKS=disabled");
+    (void)ps5log_hex64(PS5LOG_INFO, "LOG_BOOT_MONOTONIC_NS", boot_token);
+    (void)ps5log_printf(PS5LOG_INFO,
+                        "LOG_CONFIG_RESULT=%d LOG_INIT_RESULT=%d path=%s",
+                        config_result, log_result,
+                        log_path ? log_path : "unavailable");
+    (void)ps5log_line(PS5LOG_MARK,
+        "GEARS_BOOT schema=1 target=gfx1013 fw=12.02 color_clear=rt_draw");
+
+    int result = sceSysmoduleLoadModuleInternal(AGC_MODULE);
+    if (result != 0)
+        return fail_pre_submit("agc_load", result);
+    resources.agc_loaded = 1;
+    result = sceAgcInit(&resources.agc_state, sizeof(resources.agc_state));
+    if (result != 0)
+        return fail_pre_submit("agc_init", result);
+    result = map_command();
+    if (result != 0)
+        return fail_pre_submit("command_map", result);
+    result = allocate_direct(&resources.framebuffer,
+                             &resources.framebuffer_offset,
+                             PS5_SURFACE_ALLOCATION_BYTES,
+                             PS5_SURFACE_ALIGNMENT);
+    if (result != 0)
+        return fail_pre_submit("framebuffer_map", result);
+    resources.framebuffer_allocated = resources.framebuffer_mapped = 1;
+    result = ps5_surface_make_plan(0u, &resources.surface);
+    if (result != 0)
+        return fail_pre_submit("surface_plan", result);
+
+    memset(resources.framebuffer, 0, PS5_SURFACE_ALLOCATION_BYTES);
+    const uint64_t guard_offsets[3] = {
+        resources.surface.tiled_footprint,
+        PS5_SURFACE_BUFFER_STRIDE - 64u,
+        PS5_SURFACE_BUFFER_STRIDE + resources.surface.tiled_footprint,
+    };
+    for (unsigned zone = 0; zone < 3u; ++zone) {
+        uint32_t *guard = (uint32_t *)((uint8_t *)resources.framebuffer +
+                                       guard_offsets[zone]);
+        for (unsigned word = 0; word < 16u; ++word)
+            guard[word] = GUARD_WORD;
+        ps5_native_cache_flush(guard, 64u);
+    }
+    result = ps5_videoout_open(&resources.video, &video_ops,
+                               &resources.surface, resources.framebuffer);
+    if (result != 0)
+        return fail_pre_submit("videoout_open_chain", result);
+
+    result = allocate_direct(&resources.shader, &resources.shader_offset,
+                             SHADER_BYTES, SHADER_ALIGNMENT);
+    if (result != 0)
+        return fail_pre_submit("shader_map", result);
+    resources.shader_allocated = resources.shader_mapped = 1;
+    result = allocate_direct(&resources.depth, &resources.depth_offset,
+                             DEPTH_ALLOCATION_BYTES, DEPTH_ALIGNMENT);
+    if (result != 0)
+        return fail_pre_submit("depth_map", result);
+    resources.depth_allocated = resources.depth_mapped = 1;
+    memset(resources.shader, 0, SHADER_BYTES);
+
+    const struct ps5_shader_metadata metadata = {
+        PS5_GEARS_GS_RSRC1, PS5_GEARS_GS_RSRC2,
+        PS5_GEARS_PS_RSRC1, PS5_GEARS_PS_RSRC2,
+        PS5_GEARS_GE_CNTL, PS5_GEARS_SHADER_STAGES_EN,
+        PS5_GEARS_GS_OUT_PRIM_TYPE, PS5_GEARS_DRAW_MODIFIER,
+        ps5_gears_pre_raster_cx, 10u, ps5_gears_pixel_cx, 9u
+    };
+    uint8_t *base = resources.shader;
+    struct ps5_shader_arena *gs_arena =
+        (struct ps5_shader_arena *)(base + GS_HEADER_OFFSET);
+    struct ps5_shader_arena *ps_arena =
+        (struct ps5_shader_arena *)(base + PS_HEADER_OFFSET);
+    uint8_t *gs_code = base + GS_CODE_OFFSET;
+    uint8_t *ps_code = base + PS_CODE_OFFSET;
+    const size_t gs_isa = (size_t)(ps5_gears_gs_end - ps5_gears_gs_start);
+    const size_t ps_isa = (size_t)(ps5_gears_ps_end - ps5_gears_ps_start);
+    const uint32_t gs_size = (uint32_t)gs_isa + SHADER_FOOTER_BYTES;
+    const uint32_t ps_size = (uint32_t)ps_isa + SHADER_FOOTER_BYTES;
+    if (gs_isa != PS5_GEARS_GS_ISA_BYTES ||
+        ps_isa != PS5_GEARS_PS_ISA_BYTES ||
+        ps5_shader_header_build(gs_arena, PS5_SHADER_PRE_RASTER, gs_size,
+                                &metadata) != 0 ||
+        ps5_shader_header_build(ps_arena, PS5_SHADER_PIXEL, ps_size,
+                                &metadata) != 0)
+        return fail_pre_submit("shader_header", -1);
+    memcpy(gs_code, ps5_gears_gs_start, gs_isa);
+    memcpy(ps_code, ps5_gears_ps_start, ps_isa);
+    memcpy(gs_code + gs_size - SHADER_FOOTER_BYTES, "barefoot", 8u);
+    memcpy(ps_code + ps_size - SHADER_FOOTER_BYTES, "barefoot", 8u);
+    void *gs_object = 0;
+    void *ps_object = 0;
+    result = sceAgcCreateShader(&gs_object, gs_arena, gs_code);
+    if (result != 0 || gs_object != gs_arena)
+        return fail_pre_submit("create_gs", result != 0 ? result : -1);
+    result = sceAgcCreateShader(&ps_object, ps_arena, ps_code);
+    if (result != 0 || ps_object != ps_arena)
+        return fail_pre_submit("create_ps", result != 0 ? result : -1);
+    struct ps5_agc_linked_cx *linked_cx =
+        (struct ps5_agc_linked_cx *)(base + LINKED_CX_OFFSET);
+    struct ps5_agc_linked_uc *linked_uc =
+        (struct ps5_agc_linked_uc *)(base + LINKED_UC_OFFSET);
+    result = sceAgcLinkShaders(linked_cx, linked_uc, 0, gs_object, ps_object,
+                               4u);
+    if (result != 0)
+        return fail_pre_submit("link_shaders", result);
+
+    ps5_agc_register defaults[PS5_COLOR_REGISTER_COUNT];
+    result = ps5_color_select_runtime_defaults(
+        defaults, (const struct ps5_agc_register_defaults *)
+                      sceAgcGetRegisterDefaults());
+    if (result != 0)
+        return fail_pre_submit("color_defaults", result);
+    struct ps5_pipeline_registers *pipelines =
+        (struct ps5_pipeline_registers *)(base + PIPELINE_OFFSET);
+    for (unsigned slot = 0; slot < 2u; ++slot) {
+        ps5_agc_register color[PS5_COLOR_REGISTER_COUNT];
+        const uintptr_t address = (uintptr_t)resources.framebuffer +
+            resources.surface.buffer_offsets[slot];
+        if (ps5_color_build_target(color, defaults, address,
+                                   resources.surface.width,
+                                   resources.surface.height) != 0 ||
+            ps5_pipeline_build(
+                &pipelines[slot], color, linked_cx, linked_uc,
+                gs_arena->cx, ps_arena->cx, gs_arena->sh, ps_arena->sh,
+                resources.surface.width, resources.surface.height) != 0)
+            return fail_pre_submit("pipeline_build", -1);
+    }
+    ps5_agc_register *depth_registers =
+        (ps5_agc_register *)(base + DEPTH_REGISTERS_OFFSET);
+    if (ps5_depth_build_d32_no_htile(depth_registers,
+                                     (uintptr_t)resources.depth,
+                                     resources.surface.width,
+                                     resources.surface.height) != 0)
+        return fail_pre_submit("depth_state", -1);
+
+    static const size_t vertex_offsets[3] = {
+        GEAR0_OFFSET, GEAR1_OFFSET, GEAR2_OFFSET
+    };
+    static const GearSpec specs[3] = {
+        {0.2500f, 0.9125f, 1.0875f, 0.250f, 20u},
+        {0.1250f, 0.4125f, 0.5875f, 0.500f, 10u},
+        {0.3250f, 0.4125f, 0.5875f, 0.125f, 10u},
+    };
+    for (unsigned gear = 0; gear < 3u; ++gear) {
+        GearsVertex *vertices = (GearsVertex *)(base + vertex_offsets[gear]);
+        const size_t count = gears_mesh_vertex_count(specs[gear].teeth);
+        if (gears_build_mesh(vertices, count, &specs[gear]) != count)
+            return fail_pre_submit("gear_mesh", -1);
+        uint32_t *srd = (uint32_t *)(base + GEAR_SRD_OFFSET + gear * 16u);
+        const uintptr_t vertex_address = (uintptr_t)vertices;
+        const uintptr_t table_address = (uintptr_t)srd;
+        if ((table_address >> 32) != UINT64_C(2))
+            return fail_pre_submit("srd_aperture", -1);
+        srd[0] = (uint32_t)vertex_address;
+        srd[1] = (uint32_t)((vertex_address >> 32) & 0xffffu) | (24u << 16);
+        srd[2] = (uint32_t)count;
+        srd[3] = UINT32_C(0x11014fac);
+        renderer.srd_tables[gear] = (uint32_t)table_address;
+        renderer.vertex_counts[gear] = (uint32_t)count;
+    }
+    GearsRtClearVertex *clear_vertices =
+        (GearsRtClearVertex *)(base + CLEAR_VERTEX_OFFSET);
+    uint32_t *clear_srd = (uint32_t *)(base + CLEAR_SRD_OFFSET);
+    const uintptr_t clear_vertex_address = (uintptr_t)clear_vertices;
+    const uintptr_t clear_table_address = (uintptr_t)clear_srd;
+    if ((clear_table_address >> 32) != UINT64_C(2))
+        return fail_pre_submit("clear_srd_aperture", -1);
+    clear_srd[0] = (uint32_t)clear_vertex_address;
+    clear_srd[1] = (uint32_t)((clear_vertex_address >> 32) & 0xffffu) |
+                   (24u << 16);
+    clear_srd[2] = GEARS_RT_CLEAR_VERTEX_COUNT;
+    clear_srd[3] = UINT32_C(0x11014fac);
+    const float black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    if (gears_rt_clear_build(clear_vertices, &renderer.clear_draw,
+                             (uint32_t)clear_table_address, black) != 0)
+        return fail_pre_submit("rt_clear_build", -1);
+
+    volatile uint32_t *depth_guard = (volatile uint32_t *)(
+        (uint8_t *)resources.depth + DEPTH_BYTES);
+    for (unsigned word = 0; word < 16u; ++word)
+        depth_guard[word] = GUARD_WORD;
+    ps5_native_cache_flush((const void *)depth_guard, 64u);
+    ps5_native_cache_flush(resources.shader, SHADER_BYTES);
+
+    renderer.resources = &resources;
+    renderer.commands[0] = resources.command;
+    renderer.commands[1] = (uint32_t *)((uint8_t *)resources.command +
+                                         0x2000u);
+    renderer.fences[0] = (volatile uint64_t *)((uint8_t *)resources.command +
+                                               FENCE0_OFFSET);
+    renderer.fences[1] = (volatile uint64_t *)((uint8_t *)resources.command +
+                                               FENCE1_OFFSET);
+    renderer.pipelines[0] = &pipelines[0];
+    renderer.pipelines[1] = &pipelines[1];
+    renderer.depth_registers = depth_registers;
+    renderer.draw_modifier = metadata.draw_modifier;
+    ps5_native_submit_context_init(&renderer.submit, resources.command,
+                                   COMMAND_BYTES);
+
+    GearsFrameRunnerInput input = {0};
+    input.start_ns = now_ns(0);
+    input.first_flip_token = UINT64_C(0x0000420000000001);
+    input.frame_deadline_ns = UINT64_C(16666667);
+    memcpy(input.srd_tables, renderer.srd_tables, sizeof(input.srd_tables));
+    memcpy(input.vertex_counts, renderer.vertex_counts,
+           sizeof(input.vertex_counts));
+    input.now_ns = now_ns;
+    input.compose = frame_compose;
+    input.submit = frame_submit;
+    input.wait_gpu = frame_wait_gpu;
+    input.wait_videoout = frame_wait_video;
+    input.telemetry = frame_telemetry;
+    input.user = &renderer;
+    (void)ps5log_line(PS5LOG_MARK,
+        "GEARS_LOOP_BEGIN mode=continuous buffers=2 "
+        "color_dma=false depth_dma=true");
+    GearsFrameLoop loop;
+    if (gears_frame_loop_init(&loop, &input) != 0)
+        return fail_pre_submit("frame_loop_init", -1);
+    uint64_t last_guard_check = 0u;
+    uint64_t last_heartbeat = 0u;
+    for (;;) {
+        GearsFrameRunnerResult run = {0};
+        result = gears_frame_loop_step(&loop);
+        if (result != 0 || gears_frame_loop_result(&loop, &run) != 0 ||
+            run.state != GEARS_RUN_ACTIVE)
+            park("frame-loop-or-ownership-failure");
+        if (run.frames_completed >= last_guard_check + 60u) {
+            if (!guards_intact())
+                park("guard-corruption");
+            last_guard_check = run.frames_completed;
+        }
+        if (run.frames_completed >= last_heartbeat + 3600u) {
+            (void)ps5log_printf(PS5LOG_MARK,
+                "GEARS_HEARTBEAT frames=%llu max_in_flight=%u "
+                "retired_fences=zero tokens=exact guards=intact errors=%llu",
+                (unsigned long long)run.frames_completed,
+                run.max_frames_in_flight,
+                (unsigned long long)run.telemetry.errors);
+            last_heartbeat = run.frames_completed;
+        }
+    }
+}

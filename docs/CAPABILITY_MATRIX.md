@@ -25,6 +25,10 @@ Most remaining work does not require discovering a new NID.
 | Correct overlapping gears | No known new import | Depth allocation, layout, descriptor/register block, clear and barriers |
 | Textured extensions | Useful new builder likely | Texture/sampler descriptors, resource residency and cache transitions |
 
+The animated non-indexed Gears path is hardware-proven on FW 12.02 through a
+10,000-frame soak, two alternating backbuffers, two frames genuinely in flight
+and exact per-slot GPU/VideoOut completion. No new graphics import was required.
+
 ## Candidate optional imports
 
 - `sceAgcCbSetShRegisterRangeDirect`: public-reference code uses it for resource
@@ -90,7 +94,7 @@ flags `0x42`.
   allowing correct per-object lighting without a normal-matrix buffer.
 - Per object, compact SH offset `0x8d` updates 24 parameter words plus the
   32-bit vertex-table pointer. The direct-range builder copies all 25 values
-  into the DCB, so three update-and-draw pairs cost 102 DWORDs and cannot alias
+  into the DCB, so three update-and-draw pairs cost 90 DWORDs and cannot alias
   a mutable indirect table before submission completes.
 
 Public GFX10 PAL source and the resulting `gfx1013` ISA close the vertex side
@@ -108,6 +112,12 @@ Thus non-indexed Cube/Gears needs neither two descriptors nor a general uniform
 subsystem. The next hardware gate is depth consumption using the now-bounded
 offline bootstrap; indexed drawing and explicit VideoOut pacing remain optional
 refinements.
+
+The standalone project now contains the corresponding clean-room CPU mesh
+generator. A 20-tooth gear expands deterministically to 1,920 vertices with
+front/back faces, toothed outer wall and inner bore. Its only optimized math
+reference under the PS5 toolchain is `sincosf`, already exported by the public
+`libSceLibcInternal` stub; no graphics import was added.
 
 ## Public depth register map
 

@@ -1,0 +1,75 @@
+[Version]
+version = 65
+
+[VsGlsl]
+#version 450
+layout(location = 0) in vec3 in_position;
+layout(location = 1) in vec3 in_normal;
+layout(push_constant, std430) uniform Params {
+    mat4 mvp;
+    vec4 rotation;
+    vec4 material;
+} params;
+layout(location = 0) out vec3 normal;
+layout(location = 1) out vec3 material;
+vec3 rotate_by_quaternion(vec3 v, vec4 q) {
+    return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+}
+void main() {
+    gl_Position = params.mvp * vec4(in_position, 1.0);
+    normal = rotate_by_quaternion(in_normal, params.rotation);
+    material = params.material.rgb;
+}
+
+[VsInfo]
+entryPoint = main
+
+[FsGlsl]
+#version 450
+layout(location = 0) in vec3 normal;
+layout(location = 1) in vec3 material;
+layout(location = 0) out vec4 color;
+void main() {
+    vec3 n = normalize(normal);
+    vec3 light_dir = normalize(vec3(0.4, 0.7, 1.0));
+    float diffuse = max(dot(n, light_dir), 0.0);
+    color = vec4(material * (0.18 + 0.82 * diffuse), 1.0);
+}
+
+[FsInfo]
+entryPoint = main
+
+[ResourceMapping]
+userDataNode[0].visibility = 66
+userDataNode[0].type = PushConst
+userDataNode[0].offsetInDwords = 0
+userDataNode[0].sizeInDwords = 24
+userDataNode[0].set = 0xFFFFFFFF
+userDataNode[0].binding = 0
+userDataNode[0].strideInDwords = 0
+userDataNode[1].visibility = 2
+userDataNode[1].type = IndirectUserDataVaPtr
+userDataNode[1].offsetInDwords = 24
+userDataNode[1].sizeInDwords = 1
+userDataNode[1].indirectUserDataCount = 2
+
+[GraphicsPipelineState]
+topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+nggState.enableNgg = 1
+nggState.enableGsUse = 0
+colorBuffer[0].format = VK_FORMAT_B8G8R8A8_UNORM
+colorBuffer[0].channelWriteMask = 15
+colorBuffer[0].blendEnable = 0
+
+[VertexInputState]
+binding[0].binding = 0
+binding[0].stride = 24
+binding[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+attribute[0].location = 0
+attribute[0].binding = 0
+attribute[0].format = VK_FORMAT_R32G32B32_SFLOAT
+attribute[0].offset = 0
+attribute[1].location = 1
+attribute[1].binding = 0
+attribute[1].format = VK_FORMAT_R32G32B32_SFLOAT
+attribute[1].offset = 12

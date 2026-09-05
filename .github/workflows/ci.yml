@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  host-contracts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell sources
+        run: bash -n tools/build_native.sh tools/package_release.sh
+      - name: Build and run host contracts
+        run: make test
+      - name: Audit publication boundary
+        run: make audit
+      - name: Require a clean generated tree
+        run: |
+          test ! -e build
+          test ! -e dist
+          test ! -e release
+          git diff --check

@@ -1,0 +1,8 @@
+# Copy to dev.conf for local builds. Never commit the real workstation IP.
+DEV_ENABLED=1
+DEV_SERVER=REPLACE_WITH_PC_IPV4
+DEV_PORT=9300
+DEV_UDP=0
+DEV_CONNECT_TIMEOUT_MS=500
+DEV_SEND_TIMEOUT_MS=200
+DEV_TAG=ps5-agc-gears
