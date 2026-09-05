@@ -16,7 +16,7 @@ tested, reusable interfaces.
 | Map command sizing | Fixed 120 DWORD | Preflighted `draw_count * 29` flat-map composition | Exact draw/DWORD and insufficient-capacity tests |
 | Command allocation | Two fixed 4 KiB slots | Draw-count-sized, 64 KiB-aligned dual slots with separated fences | Overflow, offsets and capacity plan tests |
 | Flat map shader | Missing | Position + MVP + per-face color pipeline compiled and embedded beside Gears | GFX1013 PAL metadata, zero-relocation ELF and native-link checks |
-| Native fixed-camera frame | Missing | Private bundle load, dynamic command slots, indexed flat draws, two-buffer drain and readback | Hardware `ps5log/1` gate passed; Remote Play capture remains pending |
+| Native fixed-camera frame | Missing | Private bundle load, dynamic command slots, indexed flat draws, two-buffer drain and readback | Hardware `ps5log/1` gate and Remote Play visual capture passed |
 
 ## Gate 1 execution
 
@@ -77,8 +77,9 @@ fixed-camera reference on GFX1013 firmware 12.02:
 
 The console title was then closed by exact identity and all development
 services remained healthy. The transcript, server manifest and capture
-manifest live only in the repository's ignored private evidence tree. Direct
-Remote Play screenshots are currently all-black for both this viewer and the
-known-good Gears control on the same console. That A/B result makes the capture
-failure independent of the BSP renderer; a new interactive Chiaki pairing for
-this console is still required before visual evidence can be accepted.
+manifest live only in the repository's ignored private evidence tree. A later
+launch reused the console's existing registered Chiaki entry without pairing,
+reinitializing or refocusing the stream. Its 1280x720 direct window capture has
+SHA-256 `e16b7fca59fad6ba3ff1aaf75364b6288aebfd8be40fe079566c5fbc335ecebd`
+and visibly shows the flat-shaded map geometry. The title was again closed by
+exact identity while Chiaki remained running.
