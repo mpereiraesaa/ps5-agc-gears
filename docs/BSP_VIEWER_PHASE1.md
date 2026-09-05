@@ -14,6 +14,7 @@ tested, reusable interfaces.
 | Static GPU allocation | Hard-coded offsets | Bounds-checked aligned bump allocator | Alignment, exhaustion and no-advance-on-failure tests |
 | Indexed AGC draw | ABI documented, unused | Six-DWORD checked writer with a full GPU-span guard | Synthetic builder cursor and visibility tests |
 | Map command sizing | Fixed 120 DWORD | Preflighted `draw_count * 29` flat-map composition | Exact draw/DWORD and insufficient-capacity tests |
+| Command allocation | Two fixed 4 KiB slots | Draw-count-sized, 64 KiB-aligned dual slots with separated fences | Overflow, offsets and capacity plan tests |
 | Flat map shader | Missing | Position + MVP + per-face color pipeline source | Source contract in the host gate |
 | Native fixed-camera frame | Missing | Next hardware-bearing change | Fresh native artifact, `ps5log/1`, exact readback hash |
 
@@ -22,7 +23,7 @@ tested, reusable interfaces.
 1. Run `make all`; no console operation is allowed until it is green.
 2. Bake a private map with `make bsp-bundle BSP_INPUT=/private/path/map.bsp`.
    `.bsp`, `.wad` and `.ps5bsp` files are ignored globally and are never release
-   inputs.
+   inputs. The target validates the generated file through the C runtime parser.
 3. Upload the validated bundle into one direct-memory allocation, use the
    bundle spawn/forward fields to build the fixed view matrix, and compose the
    flat draws only after the exact command capacity has been reserved.
