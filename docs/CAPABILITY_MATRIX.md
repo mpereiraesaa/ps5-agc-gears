@@ -78,7 +78,7 @@ substantial decompilation enter this repository.
 
 ## Compiler evidence — 2026-09-05
 
-Clean-room Plasma, Cube and lit-Gears microshaders were compiled offline with
+Project-authored Plasma, Cube and lit-Gears microshaders were compiled offline with
 public LLPC for `gfx1013`; all produced relocation-free PAL ELFs with AMDGPU
 flags `0x42`.
 
@@ -88,7 +88,7 @@ flags `0x42`.
 - Cube's 4×4 MVP maps directly to 16 pre-raster user-data words. Interleaved
   position and normal inputs cause PAL to request the compiler-defined vertex
   buffer table pointer (`0x1000000f`); the stage reports 20 user SGPRs.
-- The final clean-room Gears fixture adds a unit quaternion and material color
+- The final project-authored Gears fixture adds a unit quaternion and material color
   to the MVP. All 24 words remain direct pre-raster user data; the compiler
   reports 28 user SGPRs and no relocation. The quaternion transforms normals,
   allowing correct per-object lighting without a normal-matrix buffer.
@@ -113,7 +113,7 @@ subsystem. The next hardware gate is depth consumption using the now-bounded
 offline bootstrap; indexed drawing and explicit VideoOut pacing remain optional
 refinements.
 
-The standalone project now contains the corresponding clean-room CPU mesh
+The standalone project now contains the corresponding project-authored CPU mesh
 generator. A 20-tooth gear expands deterministically to 1,920 vertices with
 front/back faces, toothed outer wall and inner bore. Its only optimized math
 reference under the PS5 toolchain is `sincosf`, already exported by the public

@@ -25,7 +25,7 @@
   packet sizes, GPU-span validation and transactional render-wait adaptation.
 - [x] Add a checked DCB submit descriptor/cache-flush boundary and compile its
   complete firmware-symbol binding with the pinned Prospero target.
-- [x] Add the clean-room non-indexed gear mesh generator and host validation.
+- [x] Add the independently authored non-indexed gear mesh generator and host validation.
 - [x] Add the three-draw MVP/quaternion/material scene builder and PS5-toolchain
   compatibility check.
 - [x] Add and host-test two-buffer ownership tracking with exact 48-bit flip
@@ -72,5 +72,7 @@
 - [ ] Reproduce the archive from a fresh clone after this reconciliation PR
   commit and compare its checksum.
 - [x] Publish the repository and acknowledge upstream projects precisely.
+- [x] Publish the LLPC GFX1013 fork with pinned LLPC/LLVM revisions and a
+  target-selection regression test.
 - [x] Require pull requests on `main`; require the host CI check after this PR
   establishes its final check context.
