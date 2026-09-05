@@ -32,10 +32,11 @@ compatibility claim.
 The strict finite reference is the uninterrupted 60,000-frame run
 `20260905T144120445Z_PPSA99997_ps5-agc-gears_0x15c32a4befaa`: its opening
 identity, ownership markers, zero renderer errors and gap-free teardown all
-passed the documented `ps5log/1` contract. It predates the continuous runtime
-at repository HEAD. The current lifecycle has separate hardware evidence up to
-25,560 completed frames with healthy heartbeats and operator closure; see
-`docs/HARDWARE_VALIDATION.md`.
+passed the documented `ps5log/1` contract. It predates the continuous runtime.
+The immediately preceding continuous build has separate hardware evidence up
+to 25,560 completed frames with healthy heartbeats and operator closure. The
+exact current commit is host/native-build validated and awaits its hardware
+revalidation; see `docs/HARDWARE_VALIDATION.md`.
 
 ## Intended contents
 

@@ -7,10 +7,11 @@ only sanitized identifiers, hashes, outcomes and known limitations.
 
 ## Continuous production-runtime evidence
 
-The production lifecycle at repository HEAD has no frame limit and is closed
-by the PS5 **Close Game** action. Run
+The production lifecycle has no frame limit and is closed by the PS5
+**Close Game** action. Run
 `20260905T152643467Z_PPSA99997_ps5-agc-gears_0x183d28b1c66c` used that
-continuous path for 25,560 completed frames. It emitted healthy heartbeats
+continuous architecture in the immediately preceding build for 25,560
+completed frames. It emitted healthy heartbeats
 through frame 25,200 with two frames in flight, exact retired fences/tokens,
 intact guards and zero renderer errors. Transcript SHA-256:
 `f618b9843799f9c4fe4da1c859694152b8c7e49ab6c554bdb067112210651feb`.
@@ -26,6 +27,12 @@ The strict finite runs below validate ordered application teardown, but predate
 the continuous production lifecycle. Together these evidence sets cover the
 current renderer path and the explicit teardown path without claiming that one
 artifact exercised both policies.
+
+Commit `7087602` changes the telemetry accounting and its fully retired-slot
+failure path. Its native SELF builds and passes host contracts, but that exact
+artifact has not yet received a hardware run. The evidence above therefore
+validates the renderer and continuous lifecycle it retains, not binary identity
+with current HEAD.
 
 ## Strict standalone 10,000-frame soak
 
