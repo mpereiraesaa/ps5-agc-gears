@@ -19,5 +19,13 @@ int main(void)
     assert(bsp_command_plan(0u, 4096u, &plan) != 0);
     assert(bsp_command_plan(1u, 0u, &plan) != 0);
     assert(bsp_command_plan(UINT32_MAX, 4096u, &plan) != 0);
+    assert(bsp_command_plan_with_stride(4000u, 32u, 4096u, &plan) == 0);
+    assert(plan.draw_dwords == 128000u);
+    assert(plan.frame_capacity_dwords == 132096u);
+    assert(plan.slot_bytes == 0x90000u);
+    assert(plan.fence_offsets[0] == 0x120000u &&
+           plan.fence_offsets[1] == 0x120040u);
+    assert(plan.allocation_bytes == 0x130000u);
+    assert(bsp_command_plan_with_stride(1u, 0u, 4096u, &plan) != 0);
     return 0;
 }

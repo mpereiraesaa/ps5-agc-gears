@@ -119,7 +119,8 @@ int bsp_flat_build_clear(BspFlatDraw *out, BspBundleVertex vertices[3],
     out->sh_words[16] = bits(0.02f);
     out->sh_words[17] = bits(0.02f);
     out->sh_words[18] = bits(0.025f);
-    out->sh_words[19] = bits(1.0f);
+    /* Textured pipeline treats control.w == 0 as the clear path. */
+    out->sh_words[19] = bits(0.0f);
     out->sh_words[20] = vertex_srd_table_address;
     out->index_count = 3u;
     out->indices = indices;

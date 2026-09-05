@@ -31,4 +31,20 @@ ps5_bsp_flat_ps_start:
 .global ps5_bsp_flat_ps_end
 ps5_bsp_flat_ps_end:
 
+.section .rodata.ps5_bsp_textured_shaders,"a",@progbits
+
+.balign 256
+.global ps5_bsp_textured_gs_start
+ps5_bsp_textured_gs_start:
+.incbin "build/shaders/bsp_textured.gs.bin"
+.global ps5_bsp_textured_gs_end
+ps5_bsp_textured_gs_end:
+
+.balign 256
+.global ps5_bsp_textured_ps_start
+ps5_bsp_textured_ps_start:
+.incbin "build/shaders/bsp_textured.ps.bin"
+.global ps5_bsp_textured_ps_end
+ps5_bsp_textured_ps_end:
+
 .section .note.GNU-stack,"",@progbits

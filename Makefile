@@ -3,7 +3,8 @@ CFLAGS ?= -O2 -std=c11 -Wall -Wextra -Werror
 BUILD := build/host
 
 .PHONY: all test shaders bsp-bundle bsp-inspect native native-release \
-	bsp-native-release bsp-noclip-native-release audit clean
+	bsp-native-release bsp-noclip-native-release \
+	bsp-textured-native-release audit clean
 all: test audit
 
 $(BUILD):
@@ -47,6 +48,7 @@ $(eval $(call test_rule,test_bsp_flat_scene,tests/test_bsp_flat_scene.c src/bsp_
 $(eval $(call test_rule,test_bsp_noclip,tests/test_bsp_noclip.c src/bsp_noclip.c,-lm))
 $(eval $(call test_rule,test_bsp_runtime_plan,tests/test_bsp_runtime_plan.c src/bsp_runtime_plan.c,))
 $(eval $(call test_rule,test_bsp_texture_descriptor,tests/test_bsp_texture_descriptor.c src/bsp_texture_descriptor.c,))
+$(eval $(call test_rule,test_bsp_textured_draw,tests/test_bsp_textured_draw.c src/bsp_textured_draw.c src/ps5_gpu_span.c,))
 $(eval $(call test_rule,test_ps5_bump_allocator,tests/test_ps5_bump_allocator.c src/ps5_bump_allocator.c,))
 $(eval $(call test_rule,inspect_bsp_bundle,tools/inspect_bsp_bundle.c src/bsp_bundle.c src/bsp_texture_descriptor.c,-Isrc))
 
@@ -60,7 +62,7 @@ TESTS := test_gears_mesh test_gears_scene test_gears_frame_tracker \
 	test_ps5log_host test_ps5_shader_header test_ps5_agc_writer \
 	test_ps5_agc_submit test_ps5_videoout test_bsp_bundle test_bsp_command_plan \
 	test_bsp_flat_draw test_bsp_flat_scene test_bsp_noclip test_bsp_runtime_plan \
-	test_bsp_texture_descriptor test_ps5_bump_allocator
+	test_bsp_texture_descriptor test_bsp_textured_draw test_ps5_bump_allocator
 
 test: $(addprefix $(BUILD)/,$(TESTS))
 	@set -e; for test in $^; do $$test; done
@@ -71,6 +73,7 @@ test: $(addprefix $(BUILD)/,$(TESTS))
 	python3 tests/test_native_contract.py
 	python3 tests/test_bake_bsp.py
 	python3 tests/test_validate_bsp_noclip_evidence.py
+	python3 tests/test_validate_bsp_textured_evidence.py
 	rm -rf build tools/__pycache__ tests/__pycache__
 
 bsp-bundle: $(BUILD)/inspect_bsp_bundle
@@ -91,6 +94,9 @@ shaders:
 	python3 tools/build_shader.py --pipe shaders/bsp_flat.pipe --name bsp_flat \
 		--amdllpc "$(AMDLLPC)" --readelf "$(LLVM_READELF)" \
 		--output-dir build/shaders
+	python3 tools/build_shader.py --pipe shaders/bsp_textured.pipe \
+		--name bsp_textured --amdllpc "$(AMDLLPC)" \
+		--readelf "$(LLVM_READELF)" --output-dir build/shaders
 	python3 tools/generate_agc_metadata.py \
 		--manifest build/shaders/gears_lit.manifest.json \
 		--output build/generated/gears_shader_metadata.h
@@ -98,6 +104,10 @@ shaders:
 		--manifest build/shaders/bsp_flat.manifest.json \
 		--output build/generated/bsp_flat_shader_metadata.h \
 		--prefix BSP_FLAT --symbol-prefix ps5_bsp_flat
+	python3 tools/generate_agc_metadata.py \
+		--manifest build/shaders/bsp_textured.manifest.json \
+		--output build/generated/bsp_textured_shader_metadata.h \
+		--prefix BSP_TEXTURED --symbol-prefix ps5_bsp_textured
 
 native:
 	bash tools/build_native.sh
@@ -111,6 +121,10 @@ bsp-native-release: bsp-bundle
 bsp-noclip-native-release: bsp-bundle
 	BSP_BUNDLE="$(CURDIR)/build/bsp/map.ps5bsp" BSP_NOCLIP=1 \
 		bash tools/build_native.sh
+
+bsp-textured-native-release: bsp-bundle
+	BSP_BUNDLE="$(CURDIR)/build/bsp/map.ps5bsp" BSP_NOCLIP=1 \
+		BSP_TEXTURED=1 bash tools/build_native.sh
 
 audit:
 	python3 tools/audit_publication.py

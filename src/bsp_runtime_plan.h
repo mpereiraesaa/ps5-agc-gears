@@ -15,14 +15,20 @@ typedef struct BspRuntimePlan {
     size_t clear_vertices_offset;
     size_t clear_indices_offset;
     size_t scene_draws_offset;
+    size_t descriptor_tables_offset;
+    size_t texture_bindings_offset;
     size_t guard_offset;
     size_t allocation_bytes;
     uint32_t scene_draw_count;
+    uint32_t descriptor_table_dwords;
 } BspRuntimePlan;
 
 /* The allocation keeps the validated file bytes in their final GPU-visible
  * location. One leading scene draw is reserved for a deterministic clear. */
 int bsp_runtime_plan(size_t bundle_bytes, uint32_t map_draw_count,
                      BspRuntimePlan *plan);
+int bsp_runtime_plan_textured(size_t bundle_bytes, uint32_t map_draw_count,
+                              uint32_t texture_count,
+                              BspRuntimePlan *plan);
 
 #endif

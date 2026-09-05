@@ -36,6 +36,7 @@ sce_sys/icon0.png
 sce_sys/param.json
 shaders/gears_lit.pipe
 shaders/bsp_flat.pipe
+shaders/bsp_textured.pipe
 src/bsp_bundle.c
 src/bsp_bundle.h
 src/bsp_command_plan.c
@@ -50,6 +51,8 @@ src/bsp_runtime_plan.c
 src/bsp_runtime_plan.h
 src/bsp_texture_descriptor.c
 src/bsp_texture_descriptor.h
+src/bsp_textured_draw.c
+src/bsp_textured_draw.h
 src/gears_mesh.c
 src/gears_mesh.h
 src/gears_frame_tracker.c
@@ -131,6 +134,7 @@ tests/test_bsp_flat_scene.c
 tests/test_bsp_noclip.c
 tests/test_bsp_runtime_plan.c
 tests/test_bsp_texture_descriptor.c
+tests/test_bsp_textured_draw.c
 tests/test_ps5_bump_allocator.c
 tests/test_bake_bsp.py
 tests/test_shader_contract.py
@@ -139,6 +143,7 @@ tests/test_generate_agc_metadata.py
 tests/test_generate_bsp_build_metadata.py
 tests/test_native_contract.py
 tests/test_validate_bsp_noclip_evidence.py
+tests/test_validate_bsp_textured_evidence.py
 tools/audit_publication.py
 tools/build_shader.py
 tools/generate_agc_metadata.py
@@ -148,4 +153,5 @@ tools/build_native.sh
 tools/bake_bsp.py
 tools/inspect_bsp_bundle.c
 tools/validate_bsp_noclip_evidence.py
+tools/validate_bsp_textured_evidence.py
 docs/BSP_VIEWER_PHASE1.md

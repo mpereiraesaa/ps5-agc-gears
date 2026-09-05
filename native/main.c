@@ -10,6 +10,8 @@
 #include "../src/bsp_flat_scene.h"
 #include "../src/bsp_noclip.h"
 #include "../src/bsp_runtime_plan.h"
+#include "../src/bsp_texture_descriptor.h"
+#include "../src/bsp_textured_draw.h"
 #include "../src/ps5_agc_submit.h"
 #include "../src/ps5_color_target.h"
 #include "../src/ps5_depth_target.h"
@@ -25,6 +27,9 @@
 #ifdef PS5_BSP_VIEWER
 #include "bsp_build_metadata.h"
 #include "bsp_flat_shader_metadata.h"
+#ifdef PS5_BSP_TEXTURED
+#include "bsp_textured_shader_metadata.h"
+#endif
 #endif
 
 #include <fcntl.h>
@@ -40,6 +45,10 @@ extern const uint8_t ps5_gears_ps_start[], ps5_gears_ps_end[];
 #ifdef PS5_BSP_VIEWER
 extern const uint8_t ps5_bsp_flat_gs_start[], ps5_bsp_flat_gs_end[];
 extern const uint8_t ps5_bsp_flat_ps_start[], ps5_bsp_flat_ps_end[];
+#ifdef PS5_BSP_TEXTURED
+extern const uint8_t ps5_bsp_textured_gs_start[], ps5_bsp_textured_gs_end[];
+extern const uint8_t ps5_bsp_textured_ps_start[], ps5_bsp_textured_ps_end[];
+#endif
 #endif
 
 enum {
@@ -72,7 +81,11 @@ enum {
     GUARD_WORD = 0x51a6c3d9u,
     BSP_FIXED_COMMAND_DWORDS = 4096u,
     BSP_MAX_BUNDLE_BYTES = 64u * 1024u * 1024u,
-#ifdef PS5_BSP_NOCLIP
+#ifdef PS5_BSP_TEXTURED
+    BSP_GATE_FRAME_COUNT = 60000u,
+    BSP_NOCLIP_MIN_MOVING_FRAMES = 600u,
+    BSP_NOCLIP_MIN_LOOKING_FRAMES = 120u,
+#elif defined(PS5_BSP_NOCLIP)
     BSP_GATE_FRAME_COUNT = 10000u,
     BSP_NOCLIP_MIN_MOVING_FRAMES = 600u,
     BSP_NOCLIP_MIN_LOOKING_FRAMES = 120u,
@@ -129,6 +142,9 @@ struct native_renderer {
     BspRuntimePlan bsp_plan;
     BspFlatDraw *bsp_draws;
     uint32_t bsp_draw_count;
+#ifdef PS5_BSP_TEXTURED
+    const uint32_t **bsp_texture_bindings;
+#endif
 #ifdef PS5_BSP_NOCLIP
     BspNoclipCamera noclip;
     float last_camera_time;
@@ -227,7 +243,16 @@ static int load_bsp_bundle(void)
     BspRuntimePlan upper;
     const uint32_t maximum_draws =
         (uint32_t)(file_bytes / sizeof(BspBundleDraw));
-    if (bsp_runtime_plan(file_bytes, maximum_draws, &upper) != 0) {
+#ifdef PS5_BSP_TEXTURED
+    const uint32_t maximum_textures =
+        (uint32_t)(file_bytes / sizeof(BspBundleTexture));
+    const int upper_result = bsp_runtime_plan_textured(
+        file_bytes, maximum_draws, maximum_textures, &upper);
+#else
+    const int upper_result = bsp_runtime_plan(file_bytes, maximum_draws,
+                                               &upper);
+#endif
+    if (upper_result != 0) {
         (void)close(fd);
         return -3;
     }
@@ -246,9 +271,17 @@ static int load_bsp_bundle(void)
     if (result != 0 || close_result != 0)
         return -4;
     if (bsp_bundle_open(resources.bsp, file_bytes,
-                        &renderer.bsp_bundle) != BSP_BUNDLE_OK ||
-        bsp_runtime_plan(file_bytes, renderer.bsp_bundle.draw_count,
-                         &renderer.bsp_plan) != 0 ||
+                        &renderer.bsp_bundle) != BSP_BUNDLE_OK)
+        return -5;
+#ifdef PS5_BSP_TEXTURED
+    result = bsp_runtime_plan_textured(
+        file_bytes, renderer.bsp_bundle.draw_count,
+        renderer.bsp_bundle.texture_count, &renderer.bsp_plan);
+#else
+    result = bsp_runtime_plan(file_bytes, renderer.bsp_bundle.draw_count,
+                              &renderer.bsp_plan);
+#endif
+    if (result != 0 ||
         renderer.bsp_plan.allocation_bytes > resources.bsp_bytes)
         return -5;
     return 0;
@@ -290,6 +323,33 @@ static int prepare_bsp_scene(void)
                              (float)resources.surface.width /
                                  (float)resources.surface.height) != 0)
         return -1;
+#ifdef PS5_BSP_TEXTURED
+    uint32_t *const descriptor_tables = (uint32_t *)(base +
+        renderer.bsp_plan.descriptor_tables_offset);
+    uint32_t written_dwords = 0u;
+    const uintptr_t descriptor_address = (uintptr_t)descriptor_tables;
+    if ((descriptor_address >> 32) != UINT64_C(2) ||
+        bsp_texture_build_tables(
+            descriptor_tables, renderer.bsp_plan.descriptor_table_dwords,
+            &renderer.bsp_bundle,
+            (uintptr_t)renderer.bsp_bundle.texture_pixels,
+            (uintptr_t)renderer.bsp_bundle.lightmap_pixels,
+            &written_dwords) != 0 ||
+        written_dwords != renderer.bsp_plan.descriptor_table_dwords)
+        return -2;
+    const uint32_t **const bindings = (const uint32_t **)(base +
+        renderer.bsp_plan.texture_bindings_offset);
+    bindings[0] = descriptor_tables;
+    for (uint32_t index = 0; index < renderer.bsp_bundle.draw_count; ++index) {
+        const uint32_t texture =
+            renderer.bsp_bundle.draws[index].base_texture;
+        if (texture >= renderer.bsp_bundle.texture_count)
+            return -3;
+        bindings[index + 1u] = descriptor_tables +
+            texture * BSP_TEXTURE_TABLE_DWORDS;
+    }
+    renderer.bsp_texture_bindings = bindings;
+#endif
     renderer.bsp_draws = draws;
     renderer.bsp_draw_count = renderer.bsp_plan.scene_draw_count;
     volatile uint32_t *guard = (volatile uint32_t *)(base +
@@ -423,6 +483,20 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
         return -15;
 #ifdef PS5_BSP_VIEWER
     BspFlatComposeResult composed = {0, 0};
+#ifdef PS5_BSP_TEXTURED
+    result = bsp_textured_compose(
+        &cursor, end, state->bsp_draws, state->bsp_texture_bindings,
+        state->bsp_draw_count, state->resources->bsp,
+        state->resources->bsp_bytes, state->draw_modifier,
+        ps5_native_set_sh_direct, ps5_native_draw_index, &composed);
+    uint32_t expected_dwords = 0u;
+    if (result != 0 ||
+        bsp_textured_required_dwords(state->bsp_draw_count,
+                                     &expected_dwords) != 0 ||
+        composed.draws != state->bsp_draw_count ||
+        composed.command_dwords != expected_dwords)
+        return -16;
+#else
     result = bsp_flat_compose(
         &cursor, end, state->bsp_draws, state->bsp_draw_count,
         state->resources->bsp, state->resources->bsp_bytes,
@@ -435,6 +509,7 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
         composed.draws != state->bsp_draw_count ||
         composed.command_dwords != expected_dwords)
         return -16;
+#endif
 #else
     GearsRendererComposeResult composed = {0, 0};
     result = gears_renderer_compose_frame(
@@ -708,7 +783,9 @@ static uint64_t bright_pixel_count(const void *data, size_t bytes)
 
 static void park_complete(void)
 {
-#ifdef PS5_BSP_NOCLIP
+#ifdef PS5_BSP_TEXTURED
+    ps5log_close("bsp-textured-soak-complete");
+#elif defined(PS5_BSP_NOCLIP)
     ps5log_close("bsp-noclip-soak-complete");
 #else
     ps5log_close("bsp-gate1-complete");
@@ -755,7 +832,14 @@ int main(void)
                         config_result, log_result,
                         log_path ? log_path : "unavailable");
 #ifdef PS5_BSP_VIEWER
-#ifdef PS5_BSP_NOCLIP
+#ifdef PS5_BSP_TEXTURED
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_TEXTURED_BOOT schema=1 target=gfx1013 fw=12.02 "
+        "composition=base_x_lightmap bundle_sha256=%s bundle_bytes=%u "
+        "soak_frames=%u",
+        PS5_BSP_BUNDLE_SHA256, PS5_BSP_BUNDLE_BYTES,
+        BSP_GATE_FRAME_COUNT);
+#elif defined(PS5_BSP_NOCLIP)
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_NOCLIP_BOOT schema=1 target=gfx1013 fw=12.02 "
         "bundle_sha256=%s bundle_bytes=%u soak_frames=%u",
@@ -792,8 +876,17 @@ int main(void)
         "connected_required=true");
 #endif
     BspCommandPlan command_plan;
-    if (bsp_command_plan(renderer.bsp_plan.scene_draw_count,
-                         BSP_FIXED_COMMAND_DWORDS, &command_plan) != 0)
+#ifdef PS5_BSP_TEXTURED
+    const int command_plan_result = bsp_command_plan_with_stride(
+        renderer.bsp_plan.scene_draw_count,
+        BSP_TEXTURED_DWORDS_PER_DRAW, BSP_FIXED_COMMAND_DWORDS,
+        &command_plan);
+#else
+    const int command_plan_result = bsp_command_plan(
+        renderer.bsp_plan.scene_draw_count, BSP_FIXED_COMMAND_DWORDS,
+        &command_plan);
+#endif
+    if (command_plan_result != 0)
         return fail_pre_submit("bsp_command_plan", -1);
     resources.command_bytes = command_plan.allocation_bytes;
     renderer.command_slot_bytes = command_plan.slot_bytes;
@@ -846,6 +939,26 @@ int main(void)
     memset(resources.shader, 0, SHADER_BYTES);
 
 #ifdef PS5_BSP_VIEWER
+#ifdef PS5_BSP_TEXTURED
+    const struct ps5_shader_metadata metadata = {
+        PS5_BSP_TEXTURED_GS_RSRC1, PS5_BSP_TEXTURED_GS_RSRC2,
+        PS5_BSP_TEXTURED_PS_RSRC1, PS5_BSP_TEXTURED_PS_RSRC2,
+        PS5_BSP_TEXTURED_GE_CNTL, PS5_BSP_TEXTURED_SHADER_STAGES_EN,
+        PS5_BSP_TEXTURED_GS_OUT_PRIM_TYPE, PS5_BSP_TEXTURED_DRAW_MODIFIER,
+        ps5_bsp_textured_pre_raster_cx,
+        sizeof(ps5_bsp_textured_pre_raster_cx) /
+            sizeof(ps5_bsp_textured_pre_raster_cx[0]),
+        ps5_bsp_textured_pixel_cx,
+        sizeof(ps5_bsp_textured_pixel_cx) /
+            sizeof(ps5_bsp_textured_pixel_cx[0])
+    };
+    const uint8_t *const embedded_gs_start = ps5_bsp_textured_gs_start;
+    const uint8_t *const embedded_gs_end = ps5_bsp_textured_gs_end;
+    const uint8_t *const embedded_ps_start = ps5_bsp_textured_ps_start;
+    const uint8_t *const embedded_ps_end = ps5_bsp_textured_ps_end;
+    const size_t expected_gs_isa = PS5_BSP_TEXTURED_GS_ISA_BYTES;
+    const size_t expected_ps_isa = PS5_BSP_TEXTURED_PS_ISA_BYTES;
+#else
     const struct ps5_shader_metadata metadata = {
         PS5_BSP_FLAT_GS_RSRC1, PS5_BSP_FLAT_GS_RSRC2,
         PS5_BSP_FLAT_PS_RSRC1, PS5_BSP_FLAT_PS_RSRC2,
@@ -863,6 +976,7 @@ int main(void)
     const uint8_t *const embedded_ps_end = ps5_bsp_flat_ps_end;
     const size_t expected_gs_isa = PS5_BSP_FLAT_GS_ISA_BYTES;
     const size_t expected_ps_isa = PS5_BSP_FLAT_PS_ISA_BYTES;
+#endif
 #else
     const struct ps5_shader_metadata metadata = {
         PS5_GEARS_GS_RSRC1, PS5_GEARS_GS_RSRC2,
@@ -948,15 +1062,32 @@ int main(void)
 #ifdef PS5_BSP_VIEWER
     if (prepare_bsp_scene() != 0)
         return fail_pre_submit("bsp_scene", -1);
+#ifdef PS5_BSP_TEXTURED
+    const uint32_t bsp_draw_dwords =
+        renderer.bsp_draw_count * BSP_TEXTURED_DWORDS_PER_DRAW;
+#else
+    const uint32_t bsp_draw_dwords =
+        renderer.bsp_draw_count * BSP_FLAT_DWORDS_PER_DRAW;
+#endif
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_BUNDLE_READY vertices=%u indices=%u map_draws=%u "
         "scene_draws=%u draw_dwords=%u command_slot_bytes=%llu "
         "allocation_bytes=%llu",
         renderer.bsp_bundle.vertex_count, renderer.bsp_bundle.index_count,
         renderer.bsp_bundle.draw_count, renderer.bsp_draw_count,
-        renderer.bsp_draw_count * BSP_FLAT_DWORDS_PER_DRAW,
+        bsp_draw_dwords,
         (unsigned long long)renderer.command_slot_bytes,
         (unsigned long long)resources.bsp_bytes);
+#ifdef PS5_BSP_TEXTURED
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_TEXTURE_TABLES_READY textures=%u descriptor_dwords=%u "
+        "lightmap=%ux%u base_mode=repeat lightmap_mode=clamp "
+        "filter=bilinear composition=base_x_lightmap",
+        renderer.bsp_bundle.texture_count,
+        renderer.bsp_plan.descriptor_table_dwords,
+        renderer.bsp_bundle.lightmap_image->width,
+        renderer.bsp_bundle.lightmap_image->height);
+#endif
 #else
     static const size_t vertex_offsets[3] = {
         GEAR0_OFFSET, GEAR1_OFFSET, GEAR2_OFFSET
@@ -1056,7 +1187,12 @@ int main(void)
     input.telemetry = frame_telemetry;
     input.user = &renderer;
 #ifdef PS5_BSP_VIEWER
-#ifdef PS5_BSP_NOCLIP
+#ifdef PS5_BSP_TEXTURED
+    (void)ps5log_line(PS5LOG_MARK,
+        "BSP_LOOP_BEGIN mode=textured-noclip-soak buffers=2 "
+        "color_dma=false depth_dma=true indexed=true frames=60000 "
+        "composition=base_x_lightmap");
+#elif defined(PS5_BSP_NOCLIP)
     (void)ps5log_line(PS5LOG_MARK,
         "BSP_LOOP_BEGIN mode=noclip-soak buffers=2 "
         "color_dma=false depth_dma=true indexed=true frames=10000");
@@ -1100,6 +1236,18 @@ int main(void)
     const uint64_t first_bright = bright_pixel_count(first, readback_bytes);
     const uint64_t second_bright = bright_pixel_count(second, readback_bytes);
 #ifdef PS5_BSP_NOCLIP
+#ifdef PS5_BSP_TEXTURED
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_TEXTURED_READBACK buffer0=%016llx buffer1=%016llx bytes=%llu "
+        "bright_pixels0=%llu bright_pixels1=%llu guards=intact "
+        "frames=%llu errors=%llu",
+        (unsigned long long)first_hash, (unsigned long long)second_hash,
+        (unsigned long long)readback_bytes,
+        (unsigned long long)first_bright,
+        (unsigned long long)second_bright,
+        (unsigned long long)run.frames_completed,
+        (unsigned long long)run.telemetry.errors);
+#else
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_NOCLIP_READBACK buffer0=%016llx buffer1=%016llx bytes=%llu "
         "bright_pixels0=%llu bright_pixels1=%llu guards=intact "
@@ -1110,6 +1258,7 @@ int main(void)
         (unsigned long long)second_bright,
         (unsigned long long)run.frames_completed,
         (unsigned long long)run.telemetry.errors);
+#endif
     const int noclip_valid =
         run.telemetry.errors == 0u &&
         run.telemetry.present_interval_over_budget == 0u &&
@@ -1118,9 +1267,34 @@ int main(void)
         renderer.noclip.connected_frames == BSP_GATE_FRAME_COUNT &&
         renderer.noclip.moving_frames >= BSP_NOCLIP_MIN_MOVING_FRAMES &&
         renderer.noclip.looking_frames >= BSP_NOCLIP_MIN_LOOKING_FRAMES &&
-        renderer.noclip.distance_travelled >= 100.0f;
+        renderer.noclip.distance_travelled >= 100.0f
+#ifdef PS5_BSP_TEXTURED
+        && first_bright != 0u && second_bright != 0u &&
+        renderer.bsp_plan.descriptor_table_dwords ==
+            renderer.bsp_bundle.texture_count * BSP_TEXTURE_TABLE_DWORDS
+#endif
+        ;
     if (!noclip_valid)
         park("noclip-input-or-movement-gate-failure");
+#ifdef PS5_BSP_TEXTURED
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_TEXTURED_SOAK_COMPLETE frames=%llu connected_frames=%llu "
+        "moving_frames=%llu looking_frames=%llu distance_milli=%llu "
+        "input_changes=%llu input_hash=%016llx read_errors=%llu "
+        "textures=%u descriptor_dwords=%u composition=base_x_lightmap "
+        "tokens=exact guards=intact errors=%llu",
+        (unsigned long long)run.frames_completed,
+        (unsigned long long)renderer.noclip.connected_frames,
+        (unsigned long long)renderer.noclip.moving_frames,
+        (unsigned long long)renderer.noclip.looking_frames,
+        (unsigned long long)(renderer.noclip.distance_travelled * 1000.0f),
+        (unsigned long long)renderer.noclip.input_changes,
+        (unsigned long long)renderer.noclip.input_hash,
+        (unsigned long long)renderer.pad_read_errors,
+        renderer.bsp_bundle.texture_count,
+        renderer.bsp_plan.descriptor_table_dwords,
+        (unsigned long long)run.telemetry.errors);
+#else
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_NOCLIP_SOAK_COMPLETE frames=%llu connected_frames=%llu "
         "moving_frames=%llu looking_frames=%llu distance_milli=%llu "
@@ -1135,6 +1309,7 @@ int main(void)
         (unsigned long long)renderer.noclip.input_hash,
         (unsigned long long)renderer.pad_read_errors,
         (unsigned long long)run.telemetry.errors);
+#endif
     park_complete();
 #else
     const int readback_valid = first_hash == second_hash &&

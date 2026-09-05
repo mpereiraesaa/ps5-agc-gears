@@ -17,10 +17,22 @@ static int align_u32(uint32_t value, uint32_t alignment, uint32_t *out)
 int bsp_command_plan(uint32_t draw_count, uint32_t fixed_dwords,
                      BspCommandPlan *plan)
 {
-    uint32_t draw_dwords = 0u;
-    if (!plan || fixed_dwords == 0u ||
-        bsp_flat_required_dwords(draw_count, &draw_dwords) != 0 ||
-        draw_dwords > UINT32_MAX - fixed_dwords)
+    return bsp_command_plan_with_stride(draw_count,
+                                        BSP_FLAT_DWORDS_PER_DRAW,
+                                        fixed_dwords, plan);
+}
+
+int bsp_command_plan_with_stride(uint32_t draw_count,
+                                 uint32_t dwords_per_draw,
+                                 uint32_t fixed_dwords,
+                                 BspCommandPlan *plan)
+{
+    if (!plan || draw_count == 0u || dwords_per_draw == 0u ||
+        fixed_dwords == 0u ||
+        draw_count > UINT32_MAX / dwords_per_draw)
+        return -1;
+    const uint32_t draw_dwords = draw_count * dwords_per_draw;
+    if (draw_dwords > UINT32_MAX - fixed_dwords)
         return -1;
     memset(plan, 0, sizeof(*plan));
     plan->draw_dwords = draw_dwords;

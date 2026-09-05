@@ -21,5 +21,9 @@ typedef struct BspCommandPlan {
  * the measured non-map packet reserve (wait, clears, pipeline and present). */
 int bsp_command_plan(uint32_t draw_count, uint32_t fixed_dwords,
                      BspCommandPlan *plan);
+int bsp_command_plan_with_stride(uint32_t draw_count,
+                                 uint32_t dwords_per_draw,
+                                 uint32_t fixed_dwords,
+                                 BspCommandPlan *plan);
 
 #endif

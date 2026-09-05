@@ -41,11 +41,14 @@ def main() -> None:
                      "deadline_misses"):
         if obsolete in source or obsolete in builder:
             raise SystemExit(f"production runtime still contains test policy: {obsolete}")
-    if 'bsp_flat_shader_metadata.h' not in makefile:
-        raise SystemExit("BSP flat shader metadata build product missing")
-    for item in ('bsp_flat.gs.bin', 'bsp_flat.ps.bin'):
+    for item in ('bsp_flat_shader_metadata.h',
+                 'bsp_textured_shader_metadata.h'):
+        if item not in makefile:
+            raise SystemExit(f"BSP shader metadata build product missing: {item}")
+    for item in ('bsp_flat.gs.bin', 'bsp_flat.ps.bin',
+                 'bsp_textured.gs.bin', 'bsp_textured.ps.bin'):
         if item not in assets:
-            raise SystemExit(f"BSP flat shader native asset missing: {item}")
+            raise SystemExit(f"BSP shader native asset missing: {item}")
     for item in ('bsp-inspect', 'generate_bsp_build_metadata.py',
                  '-DPS5_BSP_VIEWER=1', 'map.ps5bsp'):
         if item not in builder:
@@ -88,6 +91,31 @@ def main() -> None:
             raise SystemExit(f"BSP noclip runtime contract missing: {item}")
     if "bsp-noclip-native-release" not in makefile or "BSP_NOCLIP=1" not in makefile:
         raise SystemExit("BSP noclip release target missing")
+    for item in (
+        "BSP_TEXTURED requires BSP_NOCLIP=1",
+        "-DPS5_BSP_TEXTURED=1",
+        "src/bsp_textured_draw.c",
+    ):
+        if item not in builder:
+            raise SystemExit(f"BSP textured native build contract missing: {item}")
+    for item in (
+        "BSP_GATE_FRAME_COUNT = 60000u",
+        "bsp_runtime_plan_textured(",
+        "bsp_texture_build_tables(",
+        "bsp_textured_compose(",
+        "BSP_TEXTURED_BOOT schema=1 target=gfx1013",
+        "composition=base_x_lightmap",
+        "BSP_TEXTURE_TABLES_READY textures=%u descriptor_dwords=%u",
+        "BSP_LOOP_BEGIN mode=textured-noclip-soak",
+        "BSP_TEXTURED_READBACK buffer0=%016llx buffer1=%016llx",
+        "BSP_TEXTURED_SOAK_COMPLETE frames=%llu connected_frames=%llu",
+        'ps5log_close("bsp-textured-soak-complete")',
+    ):
+        if item not in source:
+            raise SystemExit(f"BSP textured runtime contract missing: {item}")
+    if ("bsp-textured-native-release" not in makefile or
+            "BSP_TEXTURED=1" not in makefile):
+        raise SystemExit("BSP textured release target missing")
     print("native telemetry and teardown source contract passed")
 
 

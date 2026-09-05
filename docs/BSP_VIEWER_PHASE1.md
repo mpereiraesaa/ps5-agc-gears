@@ -19,6 +19,7 @@ tested, reusable interfaces.
 | Native fixed-camera frame | Missing | Private bundle load, dynamic command slots, indexed flat draws, two-buffer drain and readback | Hardware `ps5log/1` gate and Remote Play visual capture passed |
 | Lightmap atlas | Missing | First-style RGB light samples packed into a deterministic guttered RGBA8 atlas with normalized per-vertex UVs | Synthetic pixel/range regressions, C bundle validation and deterministic private-map bake |
 | Base textures | Missing | Embedded BSP palettes decoded into separately pitched RGBA8 images plus one checked GFX1013 base/lightmap descriptor table per texture | Palette/fallback regressions, exact descriptor words, corrupt-view rejection and deterministic private-map bake |
+| Native base x lightmap | Missing | Two-sampler GFX1013 pipeline, per-draw descriptor-table binding and 60,000-frame noclip gate | Exact packet/layout tests, fail-closed evidence validator and signed native build; hardware gate pending |
 
 ## Gate 1 execution
 
@@ -203,3 +204,46 @@ DWORDs. Two independent bakes produced SHA-256
 This gate establishes base-image decoding and descriptor-table construction;
 the next gate consumes those tables in the native `base * lightmap` pipeline
 and carries the changed command stream through the 60,000-frame soak.
+
+## Gate 5 base x lightmap native contract
+
+`make bsp-textured-native-release` is a distinct fail-closed build mode layered
+on the validated noclip artifact. It compiles and embeds the project-authored
+`bsp_textured.pipe` GFX1013 stages, requires both the private bundle and TCP
+telemetry configuration, and retains the fixed-camera and 10,000-frame targets
+as independently reproducible modes.
+
+The vertex stage consumes the baker's 32-byte position/base-UV/light-UV record.
+The pixel stage binds one 24-DWORD table per draw: binding 0 samples the repeated
+base image and binding 1 samples the clamped shared lightmap, both bilinearly,
+then writes `base.rgb * lightmap.rgb`. Palette-alpha texels below 0.5 are
+discarded. The synthetic clear draw uses an explicit control word and never
+samples map data.
+
+Each draw is exactly 32 command DWORDs: a 23-DWORD pre-raster parameter packet,
+a three-DWORD pixel descriptor-table-pointer packet and a six-DWORD indexed
+draw. Composition prevalidates every table and index span before writing the
+first command. Runtime planning reserves the complete aligned descriptor area,
+one immutable binding pointer per scene draw, command slots sized from that
+32-DWORD stride, and a trailing guard.
+
+The hardware gate requires 60,000 completed frames and connected DualSense
+samples, at least 600 translating frames, 120 looking frames and 100 units of
+travel. It additionally requires exact VideoOut token bookends, zero renderer,
+pad and present-budget errors, intact guards, visible pixels in both final
+render targets, matching texture/descriptor cardinality and a clean
+`bsp-textured-soak-complete` BYE. The two final hashes need not be equal because
+the camera remains live throughout the soak.
+
+Private evidence is checked with:
+
+```sh
+python3 tools/validate_bsp_textured_evidence.py /private/run.json \
+  --bundle-sha256 "$PRIVATE_BUNDLE_SHA256" --bundle-bytes "$PRIVATE_BUNDLE_BYTES"
+```
+
+The validator independently checks transcript integrity, identity, boot token,
+all 100 controller heartbeats, 60,000-frame terminal telemetry, descriptor and
+sampler contract, readback visibility and clean structured shutdown. Hardware
+results and the Remote Play capture are recorded only after the signed artifact
+passes that validator.

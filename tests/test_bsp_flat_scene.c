@@ -30,6 +30,7 @@ int main(void)
     assert(clear.sh_words[5] == float_bits(1.0f));
     assert(clear.sh_words[10] == float_bits(1.0f));
     assert(clear.sh_words[15] == float_bits(1.0f));
+    assert(clear.sh_words[19] == float_bits(0.0f));
     assert(clear.sh_words[20] == 0x123400u);
     assert(clear_indices[0] == 0u && clear_indices[1] == 1u &&
            clear_indices[2] == 2u);
