@@ -132,6 +132,16 @@ At 1920×1080 its 64-KiB-aligned footprint is `0x870000` bytes, and a uniform
 internal swizzle permutations cannot change a uniform field. Per-coordinate
 CPU addressing and HTILE remain blocked on the real topology.
 
+The public no-HTILE state also requires `DB_RENDER_CONTROL` to disable depth
+and stencil compression and `DB_STENCIL_INFO` to disable tiled stencil. These
+are not optional consequences of the 16-entry target block. A depth-enabled,
+write-enabled `LESS_EQUAL` state is a separate `DB_DEPTH_CONTROL` value. The
+offline register plan is reproducible, but clear visibility is intentionally
+still a gate: the observed post-draw completion ACQUIRE covers its private
+label, not the depth allocation. The implementation must validate an explicit
+CPU-fill, DMA-plus-range-ACQUIRE, or graphics slow-clear path before claiming
+reusable per-frame depth.
+
 ## Frame ownership contract
 
 No additional pacing import is required for the first animation loop. Two
