@@ -1,6 +1,6 @@
 # PS5 AGC Gears
 
-**AGC Gears is a clean-room, hardware-accelerated graphics demo for native
+**AGC Gears is a hardware-accelerated graphics demo for native
 PlayStation 5 homebrew.** It drives the **PS5 GPU** through AGC, the console's
 low-level graphics interface, using independently authored `gfx1013` shaders.
 
@@ -86,7 +86,7 @@ Hardware results apply only to the console and firmware actually tested.
 Useful references:
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — renderer structure
-- [`docs/BACKEND_PROVENANCE.md`](docs/BACKEND_PROVENANCE.md) — clean-room boundary
+- [`docs/BACKEND_PROVENANCE.md`](docs/BACKEND_PROVENANCE.md) — source provenance boundary
 - [`docs/HARDWARE_VALIDATION.md`](docs/HARDWARE_VALIDATION.md) — hardware evidence
 - [`docs/TELEMETRY.md`](docs/TELEMETRY.md) — runtime observability contract
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — development workflow
