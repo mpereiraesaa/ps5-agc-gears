@@ -1,7 +1,6 @@
 #include "bsp_bundle.h"
 
 #include <limits.h>
-#include <math.h>
 #include <string.h>
 
 enum {
@@ -158,18 +157,18 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
     for (uint32_t vertex = 0; vertex < vertex_chunk->count; ++vertex) {
         const BspBundleVertex *const item = &view->vertices[vertex];
         for (unsigned component = 0; component < 3u; ++component)
-            if (!isfinite(item->position[component]))
+            if (!__builtin_isfinite(item->position[component]))
                 return BSP_BUNDLE_GEOMETRY_INVALID;
         for (unsigned component = 0; component < 2u; ++component)
-            if (!isfinite(item->base_uv[component]) ||
-                !isfinite(item->light_uv[component]))
+            if (!__builtin_isfinite(item->base_uv[component]) ||
+                !__builtin_isfinite(item->light_uv[component]))
                 return BSP_BUNDLE_GEOMETRY_INVALID;
     }
     for (unsigned component = 0; component < 3u; ++component) {
         view->camera_position[component] = load_f32(data + 24u + component * 4u);
         view->camera_forward[component] = load_f32(data + 36u + component * 4u);
-        if (!isfinite(view->camera_position[component]) ||
-            !isfinite(view->camera_forward[component]))
+        if (!__builtin_isfinite(view->camera_position[component]) ||
+            !__builtin_isfinite(view->camera_forward[component]))
             return BSP_BUNDLE_GEOMETRY_INVALID;
     }
     return BSP_BUNDLE_OK;

@@ -5,6 +5,10 @@
 #include "../src/gears_mesh.h"
 #include "../src/gears_renderer.h"
 #include "../src/gears_rt_clear.h"
+#include "../src/bsp_bundle.h"
+#include "../src/bsp_command_plan.h"
+#include "../src/bsp_flat_scene.h"
+#include "../src/bsp_runtime_plan.h"
 #include "../src/ps5_agc_submit.h"
 #include "../src/ps5_color_target.h"
 #include "../src/ps5_depth_target.h"
@@ -17,15 +21,25 @@
 #include "ps5_agc_native.h"
 #include "ps5log/ps5log.h"
 #include "gears_shader_metadata.h"
+#ifdef PS5_BSP_VIEWER
+#include "bsp_build_metadata.h"
+#include "bsp_flat_shader_metadata.h"
+#endif
 
+#include <fcntl.h>
 #include <signal.h>
 #include <stdint.h>
+#include <sys/stat.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
 
 extern const uint8_t ps5_gears_gs_start[], ps5_gears_gs_end[];
 extern const uint8_t ps5_gears_ps_start[], ps5_gears_ps_end[];
+#ifdef PS5_BSP_VIEWER
+extern const uint8_t ps5_bsp_flat_gs_start[], ps5_bsp_flat_gs_end[];
+extern const uint8_t ps5_bsp_flat_ps_start[], ps5_bsp_flat_ps_end[];
+#endif
 
 enum {
     AGC_MODULE = 0x80000094u,
@@ -55,6 +69,9 @@ enum {
     DEPTH_ALLOCATION_BYTES = 0x900000u,
     DEPTH_ALIGNMENT = 0x10000u,
     GUARD_WORD = 0x51a6c3d9u,
+    BSP_FIXED_COMMAND_DWORDS = 4096u,
+    BSP_MAX_BUNDLE_BYTES = 64u * 1024u * 1024u,
+    BSP_GATE_FRAME_COUNT = 600u,
 };
 
 struct native_resources {
@@ -67,6 +84,10 @@ struct native_resources {
     int64_t shader_offset;
     void *depth;
     int64_t depth_offset;
+    void *bsp;
+    int64_t bsp_offset;
+    size_t command_bytes;
+    size_t bsp_bytes;
     struct ps5_videoout video;
     struct ps5_surface_plan surface;
     int agc_loaded;
@@ -79,6 +100,8 @@ struct native_resources {
     int shader_mapped;
     int depth_allocated;
     int depth_mapped;
+    int bsp_allocated;
+    int bsp_mapped;
 };
 
 struct native_renderer {
@@ -91,6 +114,13 @@ struct native_renderer {
     uint32_t srd_tables[GEARS_SCENE_DRAW_COUNT];
     uint32_t vertex_counts[GEARS_SCENE_DRAW_COUNT];
     uint64_t draw_modifier;
+    size_t command_slot_bytes;
+#ifdef PS5_BSP_VIEWER
+    BspBundleView bsp_bundle;
+    BspRuntimePlan bsp_plan;
+    BspFlatDraw *bsp_draws;
+    uint32_t bsp_draw_count;
+#endif
     struct ps5_agc_submit_context submit;
     struct native_resources *resources;
     int transaction_started;
@@ -129,19 +159,19 @@ static int allocate_direct(void **address, int64_t *offset, size_t bytes,
 static int map_command(void)
 {
     int result = sceKernelReserveVirtualRange(&resources.command,
-                                               COMMAND_BYTES, 0,
+                                               resources.command_bytes, 0,
                                                COMMAND_ALIGNMENT);
     if (result != 0 || !resources.command)
         return result != 0 ? result : -1;
     resources.command_reserved = 1;
-    result = sceKernelAllocateMainDirectMemory(COMMAND_BYTES,
+    result = sceKernelAllocateMainDirectMemory(resources.command_bytes,
                                                 COMMAND_ALIGNMENT, 0x0c,
                                                 &resources.command_offset);
     if (result != 0)
         return result;
     resources.command_allocated = 1;
     struct ps5_batch_map_entry entry = {
-        resources.command, resources.command_offset, COMMAND_BYTES,
+        resources.command, resources.command_offset, resources.command_bytes,
         0xf2, 0x0c, 0, 0
     };
     int processed = -1;
@@ -149,9 +179,113 @@ static int map_command(void)
     if (result != 0 || processed != 1)
         return result != 0 ? result : -1;
     resources.command_mapped = 1;
-    memset(resources.command, 0, COMMAND_BYTES);
+    memset(resources.command, 0, resources.command_bytes);
     return 0;
 }
+
+#ifdef PS5_BSP_VIEWER
+static int read_exact(int fd, void *buffer, size_t bytes)
+{
+    uint8_t *cursor = buffer;
+    while (bytes != 0u) {
+        const ssize_t got = read(fd, cursor, bytes);
+        if (got <= 0)
+            return -1;
+        cursor += (size_t)got;
+        bytes -= (size_t)got;
+    }
+    return 0;
+}
+
+static int load_bsp_bundle(void)
+{
+    const int fd = open("/app0/map.ps5bsp", O_RDONLY);
+    if (fd < 0)
+        return -1;
+    struct stat status;
+    if (fstat(fd, &status) != 0 || status.st_size <= 0 ||
+        (uint64_t)status.st_size > BSP_MAX_BUNDLE_BYTES ||
+        (uint64_t)status.st_size != PS5_BSP_BUNDLE_BYTES) {
+        (void)close(fd);
+        return -2;
+    }
+    const size_t file_bytes = (size_t)status.st_size;
+    BspRuntimePlan upper;
+    const uint32_t maximum_draws =
+        (uint32_t)(file_bytes / sizeof(BspBundleDraw));
+    if (bsp_runtime_plan(file_bytes, maximum_draws, &upper) != 0) {
+        (void)close(fd);
+        return -3;
+    }
+    int result = allocate_direct(&resources.bsp, &resources.bsp_offset,
+                                 upper.allocation_bytes,
+                                 BSP_RUNTIME_ALLOCATION_ALIGNMENT);
+    if (result != 0) {
+        (void)close(fd);
+        return result;
+    }
+    resources.bsp_allocated = resources.bsp_mapped = 1;
+    resources.bsp_bytes = upper.allocation_bytes;
+    memset(resources.bsp, 0, resources.bsp_bytes);
+    result = read_exact(fd, resources.bsp, file_bytes);
+    const int close_result = close(fd);
+    if (result != 0 || close_result != 0)
+        return -4;
+    if (bsp_bundle_open(resources.bsp, file_bytes,
+                        &renderer.bsp_bundle) != BSP_BUNDLE_OK ||
+        bsp_runtime_plan(file_bytes, renderer.bsp_bundle.draw_count,
+                         &renderer.bsp_plan) != 0 ||
+        renderer.bsp_plan.allocation_bytes > resources.bsp_bytes)
+        return -5;
+    return 0;
+}
+
+static int write_vertex_srd(uint32_t table[4], const void *vertices,
+                            uint32_t vertex_count)
+{
+    if (!table || !vertices || vertex_count == 0u ||
+        ((uintptr_t)table >> 32) != UINT64_C(2))
+        return -1;
+    const uintptr_t address = (uintptr_t)vertices;
+    table[0] = (uint32_t)address;
+    table[1] = (uint32_t)((address >> 32) & 0xffffu) | (32u << 16);
+    table[2] = vertex_count;
+    table[3] = UINT32_C(0x11014fac);
+    return 0;
+}
+
+static int prepare_bsp_scene(void)
+{
+    uint8_t *const base = resources.bsp;
+    uint32_t *const srds = (uint32_t *)(base +
+        renderer.bsp_plan.vertex_srds_offset);
+    BspBundleVertex *const clear_vertices = (BspBundleVertex *)(base +
+        renderer.bsp_plan.clear_vertices_offset);
+    uint32_t *const clear_indices = (uint32_t *)(base +
+        renderer.bsp_plan.clear_indices_offset);
+    BspFlatDraw *const draws = (BspFlatDraw *)(base +
+        renderer.bsp_plan.scene_draws_offset);
+    if (write_vertex_srd(srds, renderer.bsp_bundle.vertices,
+                         renderer.bsp_bundle.vertex_count) != 0 ||
+        write_vertex_srd(srds + 4u, clear_vertices, 3u) != 0 ||
+        bsp_flat_build_clear(&draws[0], clear_vertices, clear_indices,
+                             (uint32_t)(uintptr_t)(srds + 4u)) != 0 ||
+        bsp_flat_build_scene(draws + 1u, renderer.bsp_bundle.draw_count,
+                             &renderer.bsp_bundle,
+                             (uint32_t)(uintptr_t)srds,
+                             (float)resources.surface.width /
+                                 (float)resources.surface.height) != 0)
+        return -1;
+    renderer.bsp_draws = draws;
+    renderer.bsp_draw_count = renderer.bsp_plan.scene_draw_count;
+    volatile uint32_t *guard = (volatile uint32_t *)(base +
+        renderer.bsp_plan.guard_offset);
+    for (unsigned word = 0; word < 16u; ++word)
+        guard[word] = GUARD_WORD;
+    ps5_native_cache_flush(resources.bsp, resources.bsp_bytes);
+    return 0;
+}
+#endif
 
 static const struct ps5_videoout_ops video_ops = {
     sceVideoOutOpen, sceVideoOutClose, sceVideoOutSetFlipRate,
@@ -167,9 +301,10 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
     if (!frame || !state || frame->buffer >= 2u)
         return -1;
     uint32_t *const begin = state->commands[frame->buffer];
-    uint32_t *const end = begin + COMMAND_SLOT_BYTES / sizeof(uint32_t);
+    uint32_t *const end = begin +
+        state->command_slot_bytes / sizeof(uint32_t);
     uint32_t *cursor = begin;
-    memset(begin, 0, COMMAND_SLOT_BYTES);
+    memset(begin, 0, state->command_slot_bytes);
     int result = ps5_native_wait_rendering(
         &cursor, (uint32_t)(end - cursor), 0u,
         state->resources->video.handle, (int32_t)frame->buffer);
@@ -206,6 +341,21 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
         PS5_NATIVE_REGISTERS_SH);
     if (result != 0)
         return -15;
+#ifdef PS5_BSP_VIEWER
+    BspFlatComposeResult composed = {0, 0};
+    result = bsp_flat_compose(
+        &cursor, end, state->bsp_draws, state->bsp_draw_count,
+        state->resources->bsp, state->resources->bsp_bytes,
+        state->draw_modifier, ps5_native_set_sh_direct,
+        ps5_native_draw_index, &composed);
+    uint32_t expected_dwords = 0u;
+    if (result != 0 ||
+        bsp_flat_required_dwords(state->bsp_draw_count,
+                                 &expected_dwords) != 0 ||
+        composed.draws != state->bsp_draw_count ||
+        composed.command_dwords != expected_dwords)
+        return -16;
+#else
     GearsRendererComposeResult composed = {0, 0};
     result = gears_renderer_compose_frame(
         &cursor, end, &state->clear_draw, frame->draws,
@@ -214,6 +364,7 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
     if (result != 0 || composed.draws != 4u ||
         composed.command_dwords != 120u)
         return -16;
+#endif
     state->cursor[frame->buffer] = cursor;
     return 0;
 }
@@ -227,7 +378,8 @@ static int frame_submit(const GearsAnimationFrame *frame, void *opaque)
     const unsigned slot = frame->buffer;
     struct ps5_present_stream stream = {
         state->commands[slot],
-        state->commands[slot] + COMMAND_SLOT_BYTES / sizeof(uint32_t),
+        state->commands[slot] +
+            state->command_slot_bytes / sizeof(uint32_t),
         state->cursor[slot], 0
     };
     struct ps5_submission_input input = {
@@ -283,6 +435,16 @@ static int frame_wait_video(const GearsAnimationFrame *frame,
         const int result = ps5_event_poll_completion(&completion, &poll);
         if (result == PS5_FRAME_DONE) {
             *observed_token = frame->token;
+#ifdef PS5_BSP_VIEWER
+            if (frame->frame_index == 0u ||
+                frame->frame_index + 1u == BSP_GATE_FRAME_COUNT)
+                (void)ps5log_printf(PS5LOG_MARK,
+                    "BSP_VIDEOOUT_TOKEN frame=%llu buffer=%u expected=%llu "
+                    "observed=%llu exact=true",
+                    (unsigned long long)frame->frame_index, frame->buffer,
+                    (unsigned long long)frame->token,
+                    (unsigned long long)*observed_token);
+#endif
             return 0;
         }
         if (result < 0)
@@ -297,13 +459,18 @@ static void frame_telemetry(uint64_t frame,
     (void)opaque;
     if (!snapshot)
         return;
+#ifdef PS5_BSP_VIEWER
+    const char *const event = "BSP_FRAME";
+#else
+    const char *const event = "GEARS_FRAME";
+#endif
     (void)ps5log_printf(terminal_error ? PS5LOG_ERR : PS5LOG_INFO,
-        "GEARS_FRAME frame=%llu completed=%llu compose_avg_ns=%llu "
+        "%s frame=%llu completed=%llu compose_avg_ns=%llu "
         "gpu_wait_avg_ns=%llu video_wait_avg_ns=%llu "
         "present_interval_avg_ns=%llu present_interval_max_ns=%llu "
         "present_interval_over_budget=%llu "
         "errors=%llu terminal=%d",
-        (unsigned long long)frame,
+        event, (unsigned long long)frame,
         (unsigned long long)snapshot->frames_completed,
         (unsigned long long)snapshot->compose_ns_average,
         (unsigned long long)snapshot->gpu_wait_ns_average,
@@ -334,6 +501,13 @@ static int guards_intact(void)
     for (unsigned word = 0; word < 16u; ++word)
         if (depth_guard[word] != GUARD_WORD)
             return 0;
+#ifdef PS5_BSP_VIEWER
+    const volatile uint32_t *bsp_guard = (const volatile uint32_t *)(
+        (const uint8_t *)resources.bsp + renderer.bsp_plan.guard_offset);
+    for (unsigned word = 0; word < 16u; ++word)
+        if (bsp_guard[word] != GUARD_WORD)
+            return 0;
+#endif
     return 1;
 }
 
@@ -366,6 +540,17 @@ static int cleanup(void)
                                                 DEPTH_ALLOCATION_BYTES)) != 0)
         return result;
     resources.depth_allocated = 0;
+#ifdef PS5_BSP_VIEWER
+    if (resources.bsp_mapped &&
+        (result = sceKernelMunmap(resources.bsp, resources.bsp_bytes)) != 0)
+        return result;
+    resources.bsp_mapped = 0;
+    if (resources.bsp_allocated &&
+        (result = sceKernelReleaseDirectMemory(resources.bsp_offset,
+                                                resources.bsp_bytes)) != 0)
+        return result;
+    resources.bsp_allocated = 0;
+#endif
     if (resources.shader_mapped &&
         (result = sceKernelMunmap(resources.shader, SHADER_BYTES)) != 0)
         return result;
@@ -377,7 +562,7 @@ static int cleanup(void)
     resources.shader_allocated = 0;
     if (resources.command_mapped) {
         struct ps5_batch_map_entry entry = {
-            resources.command, 0, COMMAND_BYTES, 0xf2, 0x0c, 0, 1
+            resources.command, 0, resources.command_bytes, 0xf2, 0x0c, 0, 1
         };
         int processed = -1;
         result = sceKernelBatchMap(&entry, 1, &processed);
@@ -387,11 +572,12 @@ static int cleanup(void)
     }
     if (resources.command_allocated &&
         (result = sceKernelReleaseDirectMemory(resources.command_offset,
-                                                COMMAND_BYTES)) != 0)
+                                                resources.command_bytes)) != 0)
         return result;
     resources.command_allocated = 0;
     if (resources.command_reserved &&
-        (result = sceKernelMunmap(resources.command, COMMAND_BYTES)) != 0)
+        (result = sceKernelMunmap(resources.command,
+                                  resources.command_bytes)) != 0)
         return result;
     resources.command_reserved = 0;
     if (resources.agc_loaded &&
@@ -410,6 +596,37 @@ static void park(const char *reason)
         (void)pause();
 }
 
+#ifdef PS5_BSP_VIEWER
+static uint64_t readback_hash(const void *data, size_t bytes)
+{
+    const uint8_t *cursor = data;
+    uint64_t hash = UINT64_C(14695981039346656037);
+    for (size_t index = 0; index < bytes; ++index) {
+        hash ^= cursor[index];
+        hash *= UINT64_C(1099511628211);
+    }
+    return hash;
+}
+
+static uint64_t bright_pixel_count(const void *data, size_t bytes)
+{
+    const uint8_t *pixels = data;
+    uint64_t bright = 0u;
+    for (size_t offset = 0; offset + 3u < bytes; offset += 4u)
+        if (pixels[offset] > 32u || pixels[offset + 1u] > 32u ||
+            pixels[offset + 2u] > 32u)
+            ++bright;
+    return bright;
+}
+
+static void park_complete(void)
+{
+    ps5log_close("bsp-gate1-complete");
+    for (;;)
+        (void)pause();
+}
+#endif
+
 static int fail_pre_submit(const char *step, int result)
 {
     log_result(step, result);
@@ -424,6 +641,7 @@ int main(void)
     memset(&resources, 0, sizeof(resources));
     resources.command_offset = resources.framebuffer_offset =
         resources.shader_offset = resources.depth_offset = -1;
+    resources.bsp_offset = -1;
     resources.video.handle = -1;
     ps5log_config log_config;
     const char *log_path = 0;
@@ -444,8 +662,15 @@ int main(void)
                         "LOG_CONFIG_RESULT=%d LOG_INIT_RESULT=%d path=%s",
                         config_result, log_result,
                         log_path ? log_path : "unavailable");
+#ifdef PS5_BSP_VIEWER
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_BOOT schema=1 target=gfx1013 fw=12.02 color_clear=rt_draw "
+        "bundle_sha256=%s bundle_bytes=%u",
+        PS5_BSP_BUNDLE_SHA256, PS5_BSP_BUNDLE_BYTES);
+#else
     (void)ps5log_line(PS5LOG_MARK,
         "GEARS_BOOT schema=1 target=gfx1013 fw=12.02 color_clear=rt_draw");
+#endif
 
     int result = sceSysmoduleLoadModuleInternal(AGC_MODULE);
     if (result != 0)
@@ -454,6 +679,20 @@ int main(void)
     result = sceAgcInit(&resources.agc_state, sizeof(resources.agc_state));
     if (result != 0)
         return fail_pre_submit("agc_init", result);
+#ifdef PS5_BSP_VIEWER
+    result = load_bsp_bundle();
+    if (result != 0)
+        return fail_pre_submit("bsp_bundle_load", result);
+    BspCommandPlan command_plan;
+    if (bsp_command_plan(renderer.bsp_plan.scene_draw_count,
+                         BSP_FIXED_COMMAND_DWORDS, &command_plan) != 0)
+        return fail_pre_submit("bsp_command_plan", -1);
+    resources.command_bytes = command_plan.allocation_bytes;
+    renderer.command_slot_bytes = command_plan.slot_bytes;
+#else
+    resources.command_bytes = COMMAND_BYTES;
+    renderer.command_slot_bytes = COMMAND_SLOT_BYTES;
+#endif
     result = map_command();
     if (result != 0)
         return fail_pre_submit("command_map", result);
@@ -498,6 +737,25 @@ int main(void)
     resources.depth_allocated = resources.depth_mapped = 1;
     memset(resources.shader, 0, SHADER_BYTES);
 
+#ifdef PS5_BSP_VIEWER
+    const struct ps5_shader_metadata metadata = {
+        PS5_BSP_FLAT_GS_RSRC1, PS5_BSP_FLAT_GS_RSRC2,
+        PS5_BSP_FLAT_PS_RSRC1, PS5_BSP_FLAT_PS_RSRC2,
+        PS5_BSP_FLAT_GE_CNTL, PS5_BSP_FLAT_SHADER_STAGES_EN,
+        PS5_BSP_FLAT_GS_OUT_PRIM_TYPE, PS5_BSP_FLAT_DRAW_MODIFIER,
+        ps5_bsp_flat_pre_raster_cx,
+        sizeof(ps5_bsp_flat_pre_raster_cx) /
+            sizeof(ps5_bsp_flat_pre_raster_cx[0]),
+        ps5_bsp_flat_pixel_cx,
+        sizeof(ps5_bsp_flat_pixel_cx) / sizeof(ps5_bsp_flat_pixel_cx[0])
+    };
+    const uint8_t *const embedded_gs_start = ps5_bsp_flat_gs_start;
+    const uint8_t *const embedded_gs_end = ps5_bsp_flat_gs_end;
+    const uint8_t *const embedded_ps_start = ps5_bsp_flat_ps_start;
+    const uint8_t *const embedded_ps_end = ps5_bsp_flat_ps_end;
+    const size_t expected_gs_isa = PS5_BSP_FLAT_GS_ISA_BYTES;
+    const size_t expected_ps_isa = PS5_BSP_FLAT_PS_ISA_BYTES;
+#else
     const struct ps5_shader_metadata metadata = {
         PS5_GEARS_GS_RSRC1, PS5_GEARS_GS_RSRC2,
         PS5_GEARS_PS_RSRC1, PS5_GEARS_PS_RSRC2,
@@ -505,6 +763,13 @@ int main(void)
         PS5_GEARS_GS_OUT_PRIM_TYPE, PS5_GEARS_DRAW_MODIFIER,
         ps5_gears_pre_raster_cx, 10u, ps5_gears_pixel_cx, 9u
     };
+    const uint8_t *const embedded_gs_start = ps5_gears_gs_start;
+    const uint8_t *const embedded_gs_end = ps5_gears_gs_end;
+    const uint8_t *const embedded_ps_start = ps5_gears_ps_start;
+    const uint8_t *const embedded_ps_end = ps5_gears_ps_end;
+    const size_t expected_gs_isa = PS5_GEARS_GS_ISA_BYTES;
+    const size_t expected_ps_isa = PS5_GEARS_PS_ISA_BYTES;
+#endif
     uint8_t *base = resources.shader;
     struct ps5_shader_arena *gs_arena =
         (struct ps5_shader_arena *)(base + GS_HEADER_OFFSET);
@@ -512,19 +777,18 @@ int main(void)
         (struct ps5_shader_arena *)(base + PS_HEADER_OFFSET);
     uint8_t *gs_code = base + GS_CODE_OFFSET;
     uint8_t *ps_code = base + PS_CODE_OFFSET;
-    const size_t gs_isa = (size_t)(ps5_gears_gs_end - ps5_gears_gs_start);
-    const size_t ps_isa = (size_t)(ps5_gears_ps_end - ps5_gears_ps_start);
+    const size_t gs_isa = (size_t)(embedded_gs_end - embedded_gs_start);
+    const size_t ps_isa = (size_t)(embedded_ps_end - embedded_ps_start);
     const uint32_t gs_size = (uint32_t)gs_isa + SHADER_FOOTER_BYTES;
     const uint32_t ps_size = (uint32_t)ps_isa + SHADER_FOOTER_BYTES;
-    if (gs_isa != PS5_GEARS_GS_ISA_BYTES ||
-        ps_isa != PS5_GEARS_PS_ISA_BYTES ||
+    if (gs_isa != expected_gs_isa || ps_isa != expected_ps_isa ||
         ps5_shader_header_build(gs_arena, PS5_SHADER_PRE_RASTER, gs_size,
                                 &metadata) != 0 ||
         ps5_shader_header_build(ps_arena, PS5_SHADER_PIXEL, ps_size,
                                 &metadata) != 0)
         return fail_pre_submit("shader_header", -1);
-    memcpy(gs_code, ps5_gears_gs_start, gs_isa);
-    memcpy(ps_code, ps5_gears_ps_start, ps_isa);
+    memcpy(gs_code, embedded_gs_start, gs_isa);
+    memcpy(ps_code, embedded_ps_start, ps_isa);
     memcpy(gs_code + gs_size - SHADER_FOOTER_BYTES, "barefoot", 8u);
     memcpy(ps_code + ps_size - SHADER_FOOTER_BYTES, "barefoot", 8u);
     void *gs_object = 0;
@@ -573,6 +837,19 @@ int main(void)
                                      resources.surface.height) != 0)
         return fail_pre_submit("depth_state", -1);
 
+#ifdef PS5_BSP_VIEWER
+    if (prepare_bsp_scene() != 0)
+        return fail_pre_submit("bsp_scene", -1);
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_BUNDLE_READY vertices=%u indices=%u map_draws=%u "
+        "scene_draws=%u draw_dwords=%u command_slot_bytes=%llu "
+        "allocation_bytes=%llu",
+        renderer.bsp_bundle.vertex_count, renderer.bsp_bundle.index_count,
+        renderer.bsp_bundle.draw_count, renderer.bsp_draw_count,
+        renderer.bsp_draw_count * BSP_FLAT_DWORDS_PER_DRAW,
+        (unsigned long long)renderer.command_slot_bytes,
+        (unsigned long long)resources.bsp_bytes);
+#else
     static const size_t vertex_offsets[3] = {
         GEAR0_OFFSET, GEAR1_OFFSET, GEAR2_OFFSET
     };
@@ -614,6 +891,7 @@ int main(void)
     if (gears_rt_clear_build(clear_vertices, &renderer.clear_draw,
                              (uint32_t)clear_table_address, black) != 0)
         return fail_pre_submit("rt_clear_build", -1);
+#endif
 
     volatile uint32_t *depth_guard = (volatile uint32_t *)(
         (uint8_t *)resources.depth + DEPTH_BYTES);
@@ -623,6 +901,16 @@ int main(void)
     ps5_native_cache_flush(resources.shader, SHADER_BYTES);
 
     renderer.resources = &resources;
+#ifdef PS5_BSP_VIEWER
+    renderer.commands[0] = (uint32_t *)((uint8_t *)resources.command +
+                                        command_plan.slot_offsets[0]);
+    renderer.commands[1] = (uint32_t *)((uint8_t *)resources.command +
+                                        command_plan.slot_offsets[1]);
+    renderer.fences[0] = (volatile uint64_t *)(
+        (uint8_t *)resources.command + command_plan.fence_offsets[0]);
+    renderer.fences[1] = (volatile uint64_t *)(
+        (uint8_t *)resources.command + command_plan.fence_offsets[1]);
+#else
     renderer.commands[0] = resources.command;
     renderer.commands[1] = (uint32_t *)((uint8_t *)resources.command +
                                          0x2000u);
@@ -630,20 +918,28 @@ int main(void)
                                                FENCE0_OFFSET);
     renderer.fences[1] = (volatile uint64_t *)((uint8_t *)resources.command +
                                                FENCE1_OFFSET);
+#endif
     renderer.pipelines[0] = &pipelines[0];
     renderer.pipelines[1] = &pipelines[1];
     renderer.depth_registers = depth_registers;
     renderer.draw_modifier = metadata.draw_modifier;
     ps5_native_submit_context_init(&renderer.submit, resources.command,
-                                   COMMAND_BYTES);
+                                   resources.command_bytes);
 
     GearsFrameRunnerInput input = {0};
     input.start_ns = now_ns(0);
     input.first_flip_token = UINT64_C(0x0000420000000001);
     input.present_interval_budget_ns = UINT64_C(17000000);
+#ifdef PS5_BSP_VIEWER
+    for (unsigned index = 0; index < GEARS_SCENE_DRAW_COUNT; ++index) {
+        input.srd_tables[index] = 1u;
+        input.vertex_counts[index] = 3u;
+    }
+#else
     memcpy(input.srd_tables, renderer.srd_tables, sizeof(input.srd_tables));
     memcpy(input.vertex_counts, renderer.vertex_counts,
            sizeof(input.vertex_counts));
+#endif
     input.now_ns = now_ns;
     input.compose = frame_compose;
     input.submit = frame_submit;
@@ -651,12 +947,63 @@ int main(void)
     input.wait_videoout = frame_wait_video;
     input.telemetry = frame_telemetry;
     input.user = &renderer;
+#ifdef PS5_BSP_VIEWER
+    (void)ps5log_line(PS5LOG_MARK,
+        "BSP_LOOP_BEGIN mode=fixed-camera buffers=2 "
+        "color_dma=false depth_dma=true indexed=true");
+#else
     (void)ps5log_line(PS5LOG_MARK,
         "GEARS_LOOP_BEGIN mode=continuous buffers=2 "
         "color_dma=false depth_dma=true");
+#endif
     GearsFrameLoop loop;
     if (gears_frame_loop_init(&loop, &input) != 0)
         return fail_pre_submit("frame_loop_init", -1);
+#ifdef PS5_BSP_VIEWER
+    for (unsigned frame = 0; frame < BSP_GATE_FRAME_COUNT; ++frame) {
+        result = gears_frame_loop_step(&loop);
+        if (result != 0)
+            park("bsp-submit-or-ownership-failure");
+    }
+    result = gears_frame_loop_drain(&loop);
+    GearsFrameRunnerResult run = {0};
+    if (result != 0 || gears_frame_loop_result(&loop, &run) != 0 ||
+        run.state != GEARS_RUN_COMPLETE ||
+        run.frames_completed != BSP_GATE_FRAME_COUNT)
+        park("bsp-drain-or-ownership-failure");
+    if (!guards_intact())
+        park("guard-corruption");
+    const size_t readback_bytes = resources.surface.tiled_footprint;
+    uint8_t *const first = resources.framebuffer;
+    uint8_t *const second = (uint8_t *)resources.framebuffer +
+        PS5_SURFACE_BUFFER_STRIDE;
+    ps5_native_cache_flush(first, readback_bytes);
+    ps5_native_cache_flush(second, readback_bytes);
+    const uint64_t first_hash = readback_hash(first, readback_bytes);
+    const uint64_t second_hash = readback_hash(second, readback_bytes);
+    const uint64_t first_bright = bright_pixel_count(first, readback_bytes);
+    const uint64_t second_bright = bright_pixel_count(second, readback_bytes);
+    const int readback_valid = first_hash == second_hash &&
+        first_bright != 0u && first_bright == second_bright;
+    (void)ps5log_printf(readback_valid ? PS5LOG_MARK : PS5LOG_ERR,
+        "BSP_READBACK_FNV64 buffer0=%016llx buffer1=%016llx bytes=%llu "
+        "match=%s bright_pixels0=%llu bright_pixels1=%llu "
+        "geometry_visible=%s guards=intact frames=%llu errors=%llu",
+        (unsigned long long)first_hash, (unsigned long long)second_hash,
+        (unsigned long long)readback_bytes,
+        first_hash == second_hash ? "true" : "false",
+        (unsigned long long)first_bright,
+        (unsigned long long)second_bright,
+        first_bright != 0u && first_bright == second_bright ? "true" : "false",
+        (unsigned long long)run.frames_completed,
+        (unsigned long long)run.telemetry.errors);
+    if (!readback_valid)
+        park("fixed-camera-readback-or-visibility-mismatch");
+    (void)ps5log_line(PS5LOG_MARK,
+        "BSP_GATE1_COMPLETE fixed_camera=true readback_exact=true "
+        "geometry_visible=true tokens=exact guards=intact");
+    park_complete();
+#else
     uint64_t last_guard_check = 0u;
     uint64_t last_heartbeat = 0u;
     for (;;) {
@@ -680,4 +1027,5 @@ int main(void)
             last_heartbeat = run.frames_completed;
         }
     }
+#endif
 }

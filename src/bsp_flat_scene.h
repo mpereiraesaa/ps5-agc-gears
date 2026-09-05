@@ -9,5 +9,8 @@ int bsp_flat_build_scene(BspFlatDraw *out, uint32_t capacity,
                          const BspBundleView *bundle,
                          uint32_t vertex_srd_table_address,
                          float aspect_ratio);
+int bsp_flat_build_clear(BspFlatDraw *out, BspBundleVertex vertices[3],
+                         uint32_t indices[3],
+                         uint32_t vertex_srd_table_address);
 
 #endif

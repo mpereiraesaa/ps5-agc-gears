@@ -11,8 +11,32 @@ static float value(uint32_t bits)
     return result;
 }
 
+static uint32_t float_bits(float value)
+{
+    uint32_t result;
+    memcpy(&result, &value, sizeof(result));
+    return result;
+}
+
 int main(void)
 {
+    BspFlatDraw clear;
+    BspBundleVertex clear_vertices[3];
+    uint32_t clear_indices[3];
+    assert(bsp_flat_build_clear(&clear, clear_vertices, clear_indices,
+                                0x123400u) == 0);
+    assert(clear.index_count == 3u && clear.indices == clear_indices);
+    assert(clear.sh_words[0] == float_bits(1.0f));
+    assert(clear.sh_words[5] == float_bits(1.0f));
+    assert(clear.sh_words[10] == float_bits(1.0f));
+    assert(clear.sh_words[15] == float_bits(1.0f));
+    assert(clear.sh_words[20] == 0x123400u);
+    assert(clear_indices[0] == 0u && clear_indices[1] == 1u &&
+           clear_indices[2] == 2u);
+    assert(clear_vertices[0].position[0] == -1.0f);
+    assert(clear_vertices[1].position[0] == 3.0f);
+    assert(clear_vertices[2].position[1] == 3.0f);
+
     const uint32_t indices[6] = {0, 1, 2, 2, 3, 0};
     const BspBundleDraw source[2] = {
         {.first_index = 0, .index_count = 3, .face_id = 7},

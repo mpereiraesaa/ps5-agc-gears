@@ -16,7 +16,7 @@ tested, reusable interfaces.
 | Map command sizing | Fixed 120 DWORD | Preflighted `draw_count * 29` flat-map composition | Exact draw/DWORD and insufficient-capacity tests |
 | Command allocation | Two fixed 4 KiB slots | Draw-count-sized, 64 KiB-aligned dual slots with separated fences | Overflow, offsets and capacity plan tests |
 | Flat map shader | Missing | Position + MVP + per-face color pipeline compiled and embedded beside Gears | GFX1013 PAL metadata, zero-relocation ELF and native-link checks |
-| Native fixed-camera frame | Missing | Next hardware-bearing change | Fresh native artifact, `ps5log/1`, exact readback hash |
+| Native fixed-camera frame | Missing | Private bundle load, dynamic command slots, indexed flat draws, two-buffer drain and readback | Hardware `ps5log/1` gate passed; Remote Play capture remains pending |
 
 ## Gate 1 execution
 
@@ -27,6 +27,17 @@ tested, reusable interfaces.
 2. Bake a private map with `make bsp-bundle BSP_INPUT=/private/path/map.bsp`.
    `.bsp`, `.wad` and `.ps5bsp` files are ignored globally and are never release
    inputs. The target validates the generated file through the C runtime parser.
+   A hardware-bearing artifact is built with:
+
+   ```sh
+   make bsp-native-release BSP_INPUT=/private/path/map.bsp \
+     PS5LOG_DEV_CONF=/private/path/dev.conf \
+     AMDLLPC=/path/to/amdllpc LLVM_READELF=/path/to/llvm-readelf
+   ```
+
+   This target refuses a missing TCP configuration, embeds the bundle SHA-256
+   as generated build metadata, and copies the validated bundle only into the
+   ignored `dist/PPSA99997/` title directory.
 3. Upload the validated bundle into one direct-memory allocation, use the
    bundle spawn/forward fields to build the fixed view matrix, and compose the
    flat draws only after the exact command capacity has been reserved.
@@ -36,6 +47,38 @@ tested, reusable interfaces.
 5. Record an exact raw render-target readback hash for the fixed camera. Remote
    Play supplies the accompanying visual capture, not completion evidence.
 
+The BSP build submits the same fixed camera for 600 frames, drains GPU and
+VideoOut ownership, then requires equal FNV-1a hashes over both complete tiled
+render-target footprints. It also requires both buffers to contain the same
+nonzero count of pixels brighter than the deliberately dark clear, proving map
+geometry wrote the targets. It parks only after emitting
+`BSP_GATE1_COMPLETE`; any token, guard, compose, ownership, visibility or
+readback mismatch parks as an error and retains all resources.
+
 Changes to the native command stream, direct-memory layout or indexed builder
-require a soak before Gate 1 can be marked complete. No expected hardware hash
-is recorded until the first independently archived run establishes it.
+require a soak before Gate 1 can be marked complete.
+
+## Gate 1 hardware evidence
+
+The independently archived run
+`20260905T194257169Z_PPSA99997_ps5-agc-gears_0x2638941f043d` establishes the
+fixed-camera reference on GFX1013 firmware 12.02:
+
+- signed `eboot.bin` SHA-256:
+  `ab2f4040a2d271bfa1a779500410ef6bc0b9d852c3f4bd115d94c8400c80c633`;
+- private bundle SHA-256:
+  `9efe388d160b0f75f7861c88bdc496a75f1b85ffa42c06acbac411527981815d`;
+- 600 completed frames, zero errors and zero over-budget present intervals;
+- exact VideoOut token bookends at frames 0 and 599;
+- identical full-buffer FNV-1a readback `bac7777b7831038e` with 1,941,430
+  bright pixels in each buffer;
+- intact guards and a clean `BSP_GATE1_COMPLETE` BYE after 23 contiguous
+  `ps5log/1` records.
+
+The console title was then closed by exact identity and all development
+services remained healthy. The transcript, server manifest and capture
+manifest live only in the repository's ignored private evidence tree. Direct
+Remote Play screenshots are currently all-black for both this viewer and the
+known-good Gears control on the same console. That A/B result makes the capture
+failure independent of the BSP renderer; a new interactive Chiaki pairing for
+this console is still required before visual evidence can be accepted.

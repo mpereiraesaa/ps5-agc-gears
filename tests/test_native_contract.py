@@ -9,6 +9,9 @@ def main() -> None:
     builder = (ROOT / "tools/build_native.sh").read_text(encoding="utf-8")
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     assets = (ROOT / "native/shader_assets.S").read_text(encoding="utf-8")
+    bsp_metadata = (ROOT / "tools/generate_bsp_build_metadata.py").read_text(
+        encoding="utf-8"
+    )
     required = (
         '"LOG_SCHEMA=3"',
         '"LOG_TRANSPORT=ps5log/1 tcp structured"',
@@ -43,6 +46,24 @@ def main() -> None:
     for item in ('bsp_flat.gs.bin', 'bsp_flat.ps.bin'):
         if item not in assets:
             raise SystemExit(f"BSP flat shader native asset missing: {item}")
+    for item in ('bsp-inspect', 'generate_bsp_build_metadata.py',
+                 '-DPS5_BSP_VIEWER=1', 'map.ps5bsp'):
+        if item not in builder:
+            raise SystemExit(f"BSP private release contract missing: {item}")
+    if 'PS5_BSP_BUNDLE_SHA256' not in bsp_metadata:
+        raise SystemExit("BSP bundle SHA-256 metadata contract missing")
+    for item in (
+        '"/app0/map.ps5bsp"', 'BSP_BUNDLE_READY vertices=%u',
+        'bsp_flat_compose(', 'BSP_VIDEOOUT_TOKEN frame=%llu buffer=%u',
+        'BSP_READBACK_FNV64 buffer0=%016llx',
+        'BSP_GATE1_COMPLETE fixed_camera=true',
+        'BSP_GATE_FRAME_COUNT = 600u', 'bright_pixel_count(',
+        'geometry_visible=true tokens=exact guards=intact',
+    ):
+        if item not in source:
+            raise SystemExit(f"BSP native gate contract missing: {item}")
+    if "BSP viewer requires PS5LOG_DEV_CONF" not in builder:
+        raise SystemExit("BSP release must fail closed without TCP config")
     print("native telemetry and teardown source contract passed")
 
 

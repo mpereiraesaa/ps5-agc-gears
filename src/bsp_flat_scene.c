@@ -31,7 +31,7 @@ static Vec3 cross(Vec3 a, Vec3 b)
 static int normalize(Vec3 *value)
 {
     const float length = sqrtf(dot(*value, *value));
-    if (!(length > 0.000001f) || !isfinite(length))
+    if (!(length > 0.000001f) || !__builtin_isfinite(length))
         return -1;
     value->x /= length; value->y /= length; value->z /= length;
     return 0;
@@ -95,6 +95,37 @@ static void face_color(uint32_t face, float color[4])
     color[3] = 1.0f;
 }
 
+int bsp_flat_build_clear(BspFlatDraw *out, BspBundleVertex vertices[3],
+                         uint32_t indices[3],
+                         uint32_t vertex_srd_table_address)
+{
+    if (!out || !vertices || !indices || vertex_srd_table_address == 0u)
+        return -1;
+    memset(out, 0, sizeof(*out));
+    memset(vertices, 0, 3u * sizeof(*vertices));
+    vertices[0].position[0] = -1.0f;
+    vertices[0].position[1] = -1.0f;
+    vertices[1].position[0] = 3.0f;
+    vertices[1].position[1] = -1.0f;
+    vertices[2].position[0] = -1.0f;
+    vertices[2].position[1] = 3.0f;
+    for (unsigned vertex = 0; vertex < 3u; ++vertex)
+        vertices[vertex].position[2] = 0.999f;
+    indices[0] = 0u; indices[1] = 1u; indices[2] = 2u;
+    out->sh_words[0] = bits(1.0f);
+    out->sh_words[5] = bits(1.0f);
+    out->sh_words[10] = bits(1.0f);
+    out->sh_words[15] = bits(1.0f);
+    out->sh_words[16] = bits(0.02f);
+    out->sh_words[17] = bits(0.02f);
+    out->sh_words[18] = bits(0.025f);
+    out->sh_words[19] = bits(1.0f);
+    out->sh_words[20] = vertex_srd_table_address;
+    out->index_count = 3u;
+    out->indices = indices;
+    return 0;
+}
+
 int bsp_flat_build_scene(BspFlatDraw *out, uint32_t capacity,
                          const BspBundleView *bundle,
                          uint32_t vertex_srd_table_address,
@@ -103,7 +134,7 @@ int bsp_flat_build_scene(BspFlatDraw *out, uint32_t capacity,
     if (!out || !bundle || !bundle->draws || !bundle->indices ||
         bundle->draw_count == 0u || capacity < bundle->draw_count ||
         vertex_srd_table_address == 0u || !(aspect_ratio > 0.0f) ||
-        !isfinite(aspect_ratio))
+        !__builtin_isfinite(aspect_ratio))
         return -1;
     Matrix4 view;
     if (view_matrix(bundle->camera_position, bundle->camera_forward, &view) != 0)
