@@ -87,6 +87,10 @@ for `gfx1013`; both produced relocation-free PAL ELFs with AMDGPU flags `0x42`.
   to the MVP. All 24 words remain direct pre-raster user data; the compiler
   reports 28 user SGPRs and no relocation. The quaternion transforms normals,
   allowing correct per-object lighting without a normal-matrix buffer.
+- Per object, compact SH offset `0x8d` updates 24 parameter words plus the
+  32-bit vertex-table pointer. The direct-range builder copies all 25 values
+  into the DCB, so three update-and-draw pairs cost 102 DWORDs and cannot alias
+  a mutable indirect table before submission completes.
 
 Public GFX10 PAL source and the resulting `gfx1013` ISA close the vertex side
 further:
