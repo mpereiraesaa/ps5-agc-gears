@@ -23,6 +23,7 @@ native/ps5_agc_native.c
 native/ps5_agc_native.h
 assets/branding/README.md
 assets/branding/icon-master.png
+assets/screenshots/ps5-agc-gears-hardware.jpg
 docs/ARCHITECTURE.md
 docs/BACKEND_PROVENANCE.md
 docs/CAPABILITY_MATRIX.md

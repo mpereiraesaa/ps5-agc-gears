@@ -25,6 +25,16 @@ not derive from the boilerplate presentation assets.
 - PS5 512×512 RGB derivative SHA-256:
   `cc40f50deb429e8bcf07eb43be5a3176c4f8445a88e045e830b066202b66efb8`
 
+## Hardware photograph
+
+`assets/screenshots/ps5-agc-gears-hardware.jpg` is an original photograph by
+Manuel Pereira of this project rendering on his own PlayStation 5. Metadata was
+removed before publication. The photograph is distributed under this
+repository's GPL-3.0-or-later license.
+
+- Published photograph SHA-256:
+  `98951df32e3536681ee3cd29d65b99f44a572f5728922e1b3a0b016477dc2048`
+
 ## Mesa es2gears geometry
 
 `src/gears_mesh.c` adapts the gear construction from Mesa demos
