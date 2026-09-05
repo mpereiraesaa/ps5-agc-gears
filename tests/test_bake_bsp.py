@@ -25,8 +25,16 @@ def tiny_bsp() -> bytes:
         b'{\n"classname" "info_player_start"\n'
         b'"origin" "32 16 8"\n"angle" "90"\n}\n\0'
     )
+    mip_offsets = (40, 4136, 5160, 5416)
+    mip0 = bytes(index & 255 for index in range(64 * 64))
+    mip1 = bytes(32 * 32)
+    mip2 = bytes(16 * 16)
+    mip3 = bytes(8 * 8)
+    palette = b"".join(bytes((index, (index + 1) & 255, 255 - index))
+                       for index in range(256))
     texture = bytearray(struct.pack("<II", 1, 8))
-    texture += struct.pack("<16sII4I", b"TEST", 64, 64, 0, 0, 0, 0)
+    texture += struct.pack("<16sII4I", b"{TEST", 64, 64, *mip_offsets)
+    texture += mip0 + mip1 + mip2 + mip3 + struct.pack("<H", 256) + palette
     vertices = b"".join(struct.pack("<3f", *value) for value in (
         (0.0, 0.0, 0.0), (64.0, 0.0, 0.0),
         (64.0, 64.0, 0.0), (0.0, 64.0, 0.0),
@@ -92,12 +100,12 @@ def main() -> int:
     second = BAKER.bake(source)
     assert first == second
     assert hashlib.sha256(first).hexdigest() == (
-        "a9be13086e5643b21bfba76b7815349461cca59e540ccc15b25f42722af37c5f"
+        "66085bfa081a974b410f303d05ceb4bb4ea106871328dadf132113f189ea2176"
     )
 
     header = BAKER.BUNDLE_HEADER.unpack_from(first)
     assert header[0] == BAKER.BUNDLE_MAGIC and header[1] == 1
-    assert header[3] == len(first) and header[11] == 5
+    assert header[3] == len(first) and header[11] == 7
     assert header[5:8] == (32.0, 36.0, -16.0)
     assert abs(header[8]) < 1e-6 and abs(header[9]) < 1e-6
     assert abs(header[10] + 1.0) < 1e-6
@@ -108,6 +116,10 @@ def main() -> int:
     assert directory[b"DRAW"][2:] == (1, BAKER.DRAW.size)
     assert directory[b"LMHD"][2:] == (1, BAKER.IMAGE.size)
     assert directory[b"LMPX"][2:] == (448, 4)
+    assert directory[b"TEXM"][2:] == (1, BAKER.TEXTURE.size)
+    assert directory[b"TEXP"][2:] == (16384, 1)
+    assert directory[b"LMPX"][0] % 256 == 0
+    assert directory[b"TEXP"][0] % 256 == 0
     vertex_offset = directory[b"VERT"][0]
     assert BAKER.VERTEX.unpack_from(first, vertex_offset) == (
         0.0, 0.0, -0.0, 0.0, 0.0, 0.0234375,
@@ -119,6 +131,27 @@ def main() -> int:
     assert BAKER.DRAW.unpack_from(first, draw_offset)[:5] == (0, 6, 0, 0, 0)
     light_header = BAKER.IMAGE.unpack_from(first, directory[b"LMHD"][0])
     assert light_header == (64, 7, 256, BAKER.IMAGE_FORMAT_RGBA8_UNORM)
+    texture_header = BAKER.TEXTURE.unpack_from(first, directory[b"TEXM"][0])
+    assert texture_header == (
+        0, 16384, 64, 64, 256, BAKER.IMAGE_FORMAT_RGBA8_UNORM,
+        BAKER._fnv1a32(b"{TEST"), BAKER.TEXTURE_FLAG_TRANSPARENT,
+    )
+    texture_at = directory[b"TEXP"][0]
+    assert first[texture_at:texture_at + 4] == bytes((0, 1, 255, 255))
+    assert first[texture_at + 255 * 4:texture_at + 256 * 4] == \
+        bytes((255, 0, 0, 0))
+
+    texture_lump_offset = struct.unpack_from(
+        "<I", source, 4 + BAKER.LUMP_TEXTURES * 8)[0]
+    external = bytearray(source)
+    struct.pack_into("<4I", external, texture_lump_offset + 8 + 24,
+                     0, 0, 0, 0)
+    external_bundle = BAKER.bake(bytes(external))
+    external_directory = chunks(external_bundle)
+    external_texture = BAKER.TEXTURE.unpack_from(
+        external_bundle, external_directory[b"TEXM"][0])
+    assert external_texture[7] == (BAKER.TEXTURE_FLAG_TRANSPARENT |
+                                    BAKER.TEXTURE_FLAG_FALLBACK)
 
     wrong_version = bytearray(source)
     struct.pack_into("<I", wrong_version, 0, 29)
@@ -134,7 +167,10 @@ def main() -> int:
                                      4 + BAKER.LUMP_FACES * 8)[0]
     struct.pack_into("<i", bad_light, face_offset + 16, 1024)
     must_fail(bytes(bad_light), "lightmap range")
-    print("BSP baker tests passed: deterministic geometry, spawn and lightmap atlas")
+    bad_palette = bytearray(source)
+    struct.pack_into("<H", bad_palette, texture_lump_offset + 8 + 5480, 0)
+    must_fail(bytes(bad_palette), "palette is invalid")
+    print("BSP baker tests passed: deterministic geometry, lightmaps and base textures")
     return 0
 
 

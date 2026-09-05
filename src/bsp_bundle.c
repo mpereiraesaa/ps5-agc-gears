@@ -21,6 +21,7 @@ typedef struct ChunkView {
 _Static_assert(sizeof(BspBundleVertex) == 32u, "bundle vertex ABI");
 _Static_assert(sizeof(BspBundleDraw) == 32u, "bundle draw ABI");
 _Static_assert(sizeof(BspBundleImage) == 16u, "bundle image ABI");
+_Static_assert(sizeof(BspBundleTexture) == 32u, "bundle texture ABI");
 
 static uint32_t load_u32(const uint8_t *at)
 {
@@ -118,12 +119,16 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
     const ChunkView *draw_chunk = 0;
     const ChunkView *lightmap_header_chunk = 0;
     const ChunkView *lightmap_pixels_chunk = 0;
+    const ChunkView *texture_metadata_chunk = 0;
+    const ChunkView *texture_pixels_chunk = 0;
     for (uint32_t index = 0; index < chunk_count; ++index) {
         if (tag_equal(chunks[index].tag, "VERT")) vertex_chunk = &chunks[index];
         if (tag_equal(chunks[index].tag, "INDX")) index_chunk = &chunks[index];
         if (tag_equal(chunks[index].tag, "DRAW")) draw_chunk = &chunks[index];
         if (tag_equal(chunks[index].tag, "LMHD")) lightmap_header_chunk = &chunks[index];
         if (tag_equal(chunks[index].tag, "LMPX")) lightmap_pixels_chunk = &chunks[index];
+        if (tag_equal(chunks[index].tag, "TEXM")) texture_metadata_chunk = &chunks[index];
+        if (tag_equal(chunks[index].tag, "TEXP")) texture_pixels_chunk = &chunks[index];
     }
     if (!vertex_chunk || !index_chunk || !draw_chunk ||
         vertex_chunk->stride != sizeof(BspBundleVertex) ||
@@ -142,12 +147,45 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
             (const BspBundleImage *)(data + lightmap_header_chunk->offset);
         if (image->width == 0u || image->height == 0u ||
             image->width > 2048u || image->height > 2048u ||
+            (lightmap_pixels_chunk->offset & 255u) != 0u ||
             image->row_pitch != image->width * 4u ||
             (image->row_pitch & 255u) != 0u ||
             image->format != BSP_BUNDLE_IMAGE_RGBA8_UNORM ||
             image->width > UINT32_MAX / image->height ||
             image->width * image->height != lightmap_pixels_chunk->count)
             return BSP_BUNDLE_GEOMETRY_INVALID;
+    }
+    if (!!texture_metadata_chunk != !!texture_pixels_chunk)
+        return BSP_BUNDLE_GEOMETRY_INVALID;
+    if (texture_metadata_chunk) {
+        if (texture_metadata_chunk->stride != sizeof(BspBundleTexture) ||
+            texture_pixels_chunk->stride != 1u ||
+            (texture_pixels_chunk->offset & 255u) != 0u)
+            return BSP_BUNDLE_GEOMETRY_INVALID;
+        const BspBundleTexture *const textures = (const BspBundleTexture *)(
+            data + texture_metadata_chunk->offset);
+        for (uint32_t index = 0; index < texture_metadata_chunk->count; ++index) {
+            const BspBundleTexture *const texture = &textures[index];
+            if (texture->width == 0u || texture->height == 0u ||
+                texture->width > 16384u || texture->height > 16384u ||
+                texture->row_pitch < texture->width * 4u ||
+                (texture->row_pitch & 255u) != 0u ||
+                texture->format != BSP_BUNDLE_IMAGE_RGBA8_UNORM ||
+                (texture->flags & ~(BSP_BUNDLE_TEXTURE_TRANSPARENT |
+                                    BSP_BUNDLE_TEXTURE_FALLBACK)) != 0u ||
+                texture->name_hash == 0u ||
+                texture->height > UINT32_MAX / texture->row_pitch ||
+                texture->bytes != texture->height * texture->row_pitch ||
+                (texture->offset & 255u) != 0u ||
+                texture->offset > texture_pixels_chunk->bytes ||
+                texture->bytes > texture_pixels_chunk->bytes - texture->offset)
+                return BSP_BUNDLE_GEOMETRY_INVALID;
+            if (index > 0u) {
+                const BspBundleTexture *const prior = &textures[index - 1u];
+                if (texture->offset < prior->offset + prior->bytes)
+                    return BSP_BUNDLE_GEOMETRY_INVALID;
+            }
+        }
     }
 
     const uint32_t *const indices =
@@ -166,6 +204,8 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
             (!lightmap_header_chunk && draw->lightmap != UINT32_MAX) ||
             (lightmap_header_chunk && draw->lightmap != 0u &&
              draw->lightmap != UINT32_MAX) ||
+            (texture_metadata_chunk &&
+             draw->base_texture >= texture_metadata_chunk->count) ||
             (index > 0u && (draw[-1].base_texture > draw->base_texture ||
              (draw[-1].base_texture == draw->base_texture &&
               draw[-1].face_id >= draw->face_id))))
@@ -185,6 +225,13 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
             data + lightmap_header_chunk->offset);
         view->lightmap_pixels = data + lightmap_pixels_chunk->offset;
         view->lightmap_pixel_count = lightmap_pixels_chunk->count;
+    }
+    if (texture_metadata_chunk) {
+        view->textures = (const BspBundleTexture *)(
+            data + texture_metadata_chunk->offset);
+        view->texture_count = texture_metadata_chunk->count;
+        view->texture_pixels = data + texture_pixels_chunk->offset;
+        view->texture_pixel_bytes = texture_pixels_chunk->bytes;
     }
     for (uint32_t vertex = 0; vertex < vertex_chunk->count; ++vertex) {
         const BspBundleVertex *const item = &view->vertices[vertex];

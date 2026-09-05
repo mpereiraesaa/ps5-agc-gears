@@ -68,6 +68,7 @@ def main() -> None:
         "BSP_NOCLIP requires BSP_BUNDLE",
         "-DPS5_BSP_NOCLIP=1",
         "src/bsp_noclip.c",
+        "src/bsp_texture_descriptor.c",
     ):
         if item not in builder:
             raise SystemExit(f"BSP noclip native build contract missing: {item}")

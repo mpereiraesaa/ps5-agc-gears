@@ -6,10 +6,11 @@
 
 enum { HEADER = 160, VERTEX_OFFSET = 160, INDEX_OFFSET = 256,
        DRAW_OFFSET = 272, FILE_BYTES = 304,
-       LIGHT_HEADER = 224, LIGHT_VERTEX_OFFSET = 224,
-       LIGHT_INDEX_OFFSET = 320, LIGHT_DRAW_OFFSET = 336,
-       LIGHT_IMAGE_OFFSET = 368, LIGHT_PIXELS_OFFSET = 384,
-       LIGHT_FILE_BYTES = 640 };
+       LIGHT_HEADER = 288, LIGHT_VERTEX_OFFSET = 288,
+       LIGHT_INDEX_OFFSET = 384, LIGHT_DRAW_OFFSET = 400,
+       LIGHT_IMAGE_OFFSET = 432, LIGHT_PIXELS_OFFSET = 512,
+       TEXTURE_METADATA_OFFSET = 768, TEXTURE_PIXELS_OFFSET = 1024,
+       LIGHT_FILE_BYTES = 1280 };
 
 static void put_u32(uint8_t *at, uint32_t value)
 {
@@ -87,6 +88,8 @@ static void light_checksums(uint8_t *data)
     descriptor(data, 2u, "DRAW", LIGHT_DRAW_OFFSET, 32u, 1u, 32u);
     descriptor(data, 3u, "LMHD", LIGHT_IMAGE_OFFSET, 16u, 1u, 16u);
     descriptor(data, 4u, "LMPX", LIGHT_PIXELS_OFFSET, 256u, 64u, 4u);
+    descriptor(data, 5u, "TEXM", TEXTURE_METADATA_OFFSET, 32u, 1u, 32u);
+    descriptor(data, 6u, "TEXP", TEXTURE_PIXELS_OFFSET, 256u, 256u, 1u);
     put_u32(data + 20u, crc32_bytes(data + LIGHT_HEADER,
                                     LIGHT_FILE_BYTES - LIGHT_HEADER));
 }
@@ -101,7 +104,7 @@ static void make_light_bundle(uint8_t data[LIGHT_FILE_BYTES])
     put_f32(data + 36u, 0.0f);
     put_f32(data + 40u, 0.0f);
     put_f32(data + 44u, -1.0f);
-    put_u32(data + 48u, 5u);
+    put_u32(data + 48u, 7u);
     BspBundleVertex *const vertices =
         (BspBundleVertex *)(data + LIGHT_VERTEX_OFFSET);
     vertices[0].light_uv[0] = vertices[0].light_uv[1] = 0.5f;
@@ -120,8 +123,18 @@ static void make_light_bundle(uint8_t data[LIGHT_FILE_BYTES])
     image->height = 1u;
     image->row_pitch = 256u;
     image->format = BSP_BUNDLE_IMAGE_RGBA8_UNORM;
-    memset(data + LIGHT_PIXELS_OFFSET, 0xff,
-           LIGHT_FILE_BYTES - LIGHT_PIXELS_OFFSET);
+    memset(data + LIGHT_PIXELS_OFFSET, 0xff, 256u);
+    BspBundleTexture *const texture =
+        (BspBundleTexture *)(data + TEXTURE_METADATA_OFFSET);
+    texture->offset = 0u;
+    texture->bytes = 256u;
+    texture->width = 17u;
+    texture->height = 1u;
+    texture->row_pitch = 256u;
+    texture->format = BSP_BUNDLE_IMAGE_RGBA8_UNORM;
+    texture->name_hash = UINT32_C(0x12345678);
+    texture->flags = BSP_BUNDLE_TEXTURE_TRANSPARENT;
+    memset(data + TEXTURE_PIXELS_OFFSET, 0xaa, 256u);
     light_checksums(data);
 }
 
@@ -165,10 +178,19 @@ int main(void)
            BSP_BUNDLE_OK);
     assert(view.lightmap_image && view.lightmap_pixels &&
            view.lightmap_image->width == 64u &&
-           view.lightmap_pixel_count == 64u);
+           view.lightmap_pixel_count == 64u && view.textures &&
+           view.texture_count == 1u && view.texture_pixel_bytes == 256u &&
+           view.textures[0].width == 17u);
     BspBundleImage *const image =
         (BspBundleImage *)(light.bytes + LIGHT_IMAGE_OFFSET);
     image->row_pitch = 252u;
+    light_checksums(light.bytes);
+    assert(bsp_bundle_open(light.bytes, sizeof(light.bytes), &view) ==
+           BSP_BUNDLE_GEOMETRY_INVALID);
+    image->row_pitch = 256u;
+    BspBundleTexture *const texture =
+        (BspBundleTexture *)(light.bytes + TEXTURE_METADATA_OFFSET);
+    texture->offset = 1u;
     light_checksums(light.bytes);
     assert(bsp_bundle_open(light.bytes, sizeof(light.bytes), &view) ==
            BSP_BUNDLE_GEOMETRY_INVALID);

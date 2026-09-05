@@ -38,14 +38,19 @@ VERTEX = struct.Struct("<3f2f2fI")
 DRAW = struct.Struct("<8I")
 INDEX = struct.Struct("<I")
 IMAGE = struct.Struct("<4I")
+TEXTURE = struct.Struct("<8I")
 
 MAX_INPUT_BYTES = 512 * 1024 * 1024
+MAX_OUTPUT_BYTES = 64 * 1024 * 1024
+MAX_DECODED_TEXTURE_BYTES = 48 * 1024 * 1024
 MAX_FACES = 1_000_000
 MAX_FACE_EDGES = 4096
 PLAYER_EYE_HEIGHT = 28.0
 ATLAS_MAX_DIMENSION = 2048
 ATLAS_GUTTER = 1
 IMAGE_FORMAT_RGBA8_UNORM = 1
+TEXTURE_FLAG_TRANSPARENT = 1
+TEXTURE_FLAG_FALLBACK = 2
 
 
 class BakeError(ValueError):
@@ -63,6 +68,15 @@ class TextureInfo:
     s: tuple[float, float, float, float]
     t: tuple[float, float, float, float]
     miptex: int
+
+
+@dataclass(frozen=True)
+class BaseTexture:
+    name_hash: int
+    width: int
+    height: int
+    rgba: bytes
+    flags: int
 
 
 @dataclass(frozen=True)
@@ -97,6 +111,7 @@ class Chunk:
     data: bytes
     count: int
     stride: int
+    alignment: int = 16
 
 
 def _records(data: bytes, lump: Lump, record: struct.Struct, label: str):
@@ -121,25 +136,126 @@ def _parse_lumps(data: bytes) -> list[Lump]:
     return lumps
 
 
-def _parse_texture_sizes(data: bytes, lump: Lump) -> list[tuple[int, int]]:
+def _fnv1a32(data: bytes) -> int:
+    value = 0x811C9DC5
+    for byte in data:
+        value = ((value ^ byte) * 0x01000193) & 0xFFFFFFFF
+    return value
+
+
+def _fallback_texture(width: int, height: int) -> bytes:
+    pixels = bytearray()
+    for y in range(height):
+        for x in range(width):
+            bright = ((x // 8) ^ (y // 8)) & 1
+            pixels += bytes((255, 0 if bright else 64, 255, 255))
+    return bytes(pixels)
+
+
+def _parse_base_textures(data: bytes, lump: Lump) -> list[BaseTexture]:
     if lump.size < 4:
         raise BakeError("texture lump is truncated")
     count = struct.unpack_from("<I", data, lump.offset)[0]
     if count > MAX_FACES or 4 + count * 4 > lump.size:
         raise BakeError("texture directory is truncated or excessive")
-    sizes = []
+    textures: list[BaseTexture] = []
+    decoded_bytes = 0
     for index in range(count):
         relative = struct.unpack_from("<i", data, lump.offset + 4 + index * 4)[0]
         if relative < 0:
-            sizes.append((1, 1))
+            if relative != -1:
+                raise BakeError(f"miptex {index} has an invalid directory offset")
+            if 16 * 16 * 4 > MAX_DECODED_TEXTURE_BYTES - decoded_bytes:
+                raise BakeError("decoded base textures exceed the Phase 1 size limit")
+            decoded_bytes += 16 * 16 * 4
+            name = f"missing-{index}".encode()
+            textures.append(BaseTexture(_fnv1a32(name), 16, 16,
+                                        _fallback_texture(16, 16),
+                                        TEXTURE_FLAG_FALLBACK))
             continue
         if relative > lump.size - 40:
             raise BakeError(f"miptex {index} header is outside the texture lump")
-        width, height = struct.unpack_from("<II", data, lump.offset + relative + 16)
+        name_raw, width, height, *offsets = struct.unpack_from(
+            "<16sII4I", data, lump.offset + relative)
+        name = name_raw.split(b"\0", 1)[0]
+        if not name:
+            raise BakeError(f"miptex {index} has an empty name")
         if width == 0 or height == 0 or width > 16384 or height > 16384:
             raise BakeError(f"miptex {index} has invalid dimensions")
-        sizes.append((width, height))
-    return sizes
+        rgba_bytes = width * height * 4
+        if rgba_bytes > MAX_DECODED_TEXTURE_BYTES - decoded_bytes:
+            raise BakeError("decoded base textures exceed the Phase 1 size limit")
+        decoded_bytes += rgba_bytes
+        name_hash = _fnv1a32(name)
+        if name_hash == 0:
+            raise BakeError(f"miptex {index} has an unsupported zero name hash")
+        flags = TEXTURE_FLAG_TRANSPARENT if name.startswith(b"{") else 0
+        if offsets[0] == 0:
+            if any(offsets):
+                raise BakeError(f"miptex {index} has an incomplete mip chain")
+            textures.append(BaseTexture(name_hash, width, height,
+                                        _fallback_texture(width, height),
+                                        flags | TEXTURE_FLAG_FALLBACK))
+            continue
+        dimensions = [(max(1, width >> level), max(1, height >> level))
+                      for level in range(4)]
+        ranges = []
+        for level, (offset, (mip_width, mip_height)) in enumerate(
+                zip(offsets, dimensions)):
+            mip_bytes = mip_width * mip_height
+            mip_at = relative + offset
+            if offset < 40 or mip_at > lump.size or \
+                    mip_bytes > lump.size - mip_at:
+                raise BakeError(f"miptex {index} mip {level} range is invalid")
+            ranges.append((mip_at, mip_bytes))
+        for level in range(1, 4):
+            prior_at, prior_bytes = ranges[level - 1]
+            if ranges[level][0] < prior_at + prior_bytes:
+                raise BakeError(f"miptex {index} mip chain overlaps")
+        mip_at, mip_bytes = ranges[0]
+        palette_at = ranges[3][0] + ranges[3][1]
+        if palette_at > lump.size - 2:
+            raise BakeError(f"miptex {index} palette range is invalid")
+        palette_count = struct.unpack_from("<H", data,
+                                           lump.offset + palette_at)[0]
+        if palette_count != 256 or \
+                palette_count * 3 > lump.size - palette_at - 2:
+            raise BakeError(f"miptex {index} palette is invalid")
+        indices = data[lump.offset + mip_at:lump.offset + mip_at + mip_bytes]
+        palette = data[lump.offset + palette_at + 2:
+                       lump.offset + palette_at + 2 + palette_count * 3]
+        rgba = bytearray()
+        for palette_index in indices:
+            if palette_index >= palette_count:
+                raise BakeError(f"miptex {index} palette index is invalid")
+            at = palette_index * 3
+            alpha = 0 if flags & TEXTURE_FLAG_TRANSPARENT and palette_index == 255 else 255
+            rgba += palette[at:at + 3] + bytes((alpha,))
+        textures.append(BaseTexture(name_hash, width, height,
+                                    bytes(rgba), flags))
+    return textures
+
+
+def _texture_chunks(textures: list[BaseTexture]) -> tuple[bytes, bytes]:
+    if not textures:
+        raise BakeError("BSP texture directory is empty")
+    metadata = bytearray()
+    pixels = bytearray()
+    for texture in textures:
+        aligned = _align(len(pixels), 256)
+        pixels += bytes(aligned - len(pixels))
+        offset = len(pixels)
+        row_pitch = _align(texture.width * 4, 256)
+        for row in range(texture.height):
+            source = row * texture.width * 4
+            pixels += texture.rgba[source:source + texture.width * 4]
+            pixels += bytes(row_pitch - texture.width * 4)
+        texture_bytes = row_pitch * texture.height
+        metadata += TEXTURE.pack(offset, texture_bytes, texture.width,
+                                 texture.height, row_pitch,
+                                 IMAGE_FORMAT_RGBA8_UNORM,
+                                 texture.name_hash, texture.flags)
+    return bytes(metadata), bytes(pixels)
 
 
 def _entity_pairs(block: str) -> dict[str, str]:
@@ -339,10 +455,12 @@ def _chunk_bytes(chunks: list[Chunk], camera: tuple[float, float, float],
     offsets: list[int] = []
     cursor = header_bytes
     for chunk in chunks:
-        cursor = _align(cursor)
+        cursor = _align(cursor, chunk.alignment)
         offsets.append(cursor)
         cursor += len(chunk.data)
     file_bytes = cursor
+    if file_bytes > MAX_OUTPUT_BYTES:
+        raise BakeError("bundle exceeds the native Phase 1 size limit")
     output = bytearray(file_bytes)
     for chunk, offset in zip(chunks, offsets):
         output[offset:offset + len(chunk.data)] = chunk.data
@@ -378,7 +496,10 @@ def bake(data: bytes) -> bytes:
         raise BakeError("face count exceeds the host baker limit")
     faces = [Face(row[2], row[3], row[4], tuple(row[5:9]), row[9])
              for row in raw_faces]
-    texture_sizes = _parse_texture_sizes(data, lumps[LUMP_TEXTURES])
+    base_textures = _parse_base_textures(data, lumps[LUMP_TEXTURES])
+    texture_sizes = [(texture.width, texture.height)
+                     for texture in base_textures]
+    texture_metadata, texture_pixels = _texture_chunks(base_textures)
     lighting = data[lumps[LUMP_LIGHTING].offset:
                     lumps[LUMP_LIGHTING].offset + lumps[LUMP_LIGHTING].size]
     camera, forward = _spawn_camera(
@@ -446,7 +567,9 @@ def bake(data: bytes) -> bytes:
         Chunk(b"INDX", bytes(index_blob), emitted_indices, INDEX.size),
         Chunk(b"DRAW", draw_blob, len(draws), DRAW.size),
         Chunk(b"LMHD", light_header, 1, IMAGE.size),
-        Chunk(b"LMPX", light_pixels, atlas_width * atlas_height, 4),
+        Chunk(b"LMPX", light_pixels, atlas_width * atlas_height, 4, 256),
+        Chunk(b"TEXM", texture_metadata, len(base_textures), TEXTURE.size),
+        Chunk(b"TEXP", texture_pixels, len(texture_pixels), 1, 256),
     ], camera, forward)
 
 

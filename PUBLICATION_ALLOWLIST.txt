@@ -48,6 +48,8 @@ src/bsp_noclip.c
 src/bsp_noclip.h
 src/bsp_runtime_plan.c
 src/bsp_runtime_plan.h
+src/bsp_texture_descriptor.c
+src/bsp_texture_descriptor.h
 src/gears_mesh.c
 src/gears_mesh.h
 src/gears_frame_tracker.c
@@ -128,6 +130,7 @@ tests/test_bsp_flat_draw.c
 tests/test_bsp_flat_scene.c
 tests/test_bsp_noclip.c
 tests/test_bsp_runtime_plan.c
+tests/test_bsp_texture_descriptor.c
 tests/test_ps5_bump_allocator.c
 tests/test_bake_bsp.py
 tests/test_shader_contract.py

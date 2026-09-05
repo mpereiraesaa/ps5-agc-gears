@@ -18,6 +18,7 @@ tested, reusable interfaces.
 | Flat map shader | Missing | Position + MVP + per-face color pipeline compiled and embedded beside Gears | GFX1013 PAL metadata, zero-relocation ELF and native-link checks |
 | Native fixed-camera frame | Missing | Private bundle load, dynamic command slots, indexed flat draws, two-buffer drain and readback | Hardware `ps5log/1` gate and Remote Play visual capture passed |
 | Lightmap atlas | Missing | First-style RGB light samples packed into a deterministic guttered RGBA8 atlas with normalized per-vertex UVs | Synthetic pixel/range regressions, C bundle validation and deterministic private-map bake |
+| Base textures | Missing | Embedded BSP palettes decoded into separately pitched RGBA8 images plus one checked GFX1013 base/lightmap descriptor table per texture | Palette/fallback regressions, exact descriptor words, corrupt-view rejection and deterministic private-map bake |
 
 ## Gate 1 execution
 
@@ -167,3 +168,38 @@ The map and generated bundle remain ignored private inputs. This gate
 establishes atlas correctness only; native sampling is introduced after the
 base-texture descriptor-table contract so the final shader can bind both
 resources together.
+
+## Gate 4 base-texture descriptor-table contract
+
+The baker decodes mip level zero from each embedded GoldSrc `miptex` and its
+256-entry RGB palette. Names beginning with `{` map palette index 255 to zero
+alpha. WAD-only or absent texture payloads remain renderable through a
+deterministic magenta checkerboard carrying an explicit fallback flag; the
+baker never opens a WAD or adds commercial input to the public tree. Malformed
+directories, overlapping mip chains, palettes, dimensions and aggregate sizes
+fail before a bundle is written.
+
+`TEXM` records one 32-byte image entry per original texture and `TEXP` stores
+the corresponding RGBA8 rows. Every image begins at a 256-byte boundary and
+every row pitch is a multiple of 256 bytes. Images remain separate rather than
+being packed into an atlas, preserving GoldSrc's repeated base UVs. The C
+consumer proves all spans, formats, pitches, flags, ordering and draw indices
+before exposing them.
+
+`bsp_texture_descriptor` then emits the exact 8-DWORD GFX10.3 linear image SRD
+and 4-DWORD sampler SRD. Each 24-DWORD table contains binding 0 with repeat and
+bilinear filtering for the base image, followed by binding 1 with clamp-to-last-
+texel and bilinear filtering for the shared lightmap. The builder checks 48-bit
+256-byte-aligned GPU addresses, GFX1013 dimensions and custom row pitch, sizes
+the complete table before writing, and rejects forged bundle views. Generated
+AMD headers are not published; the field positions are the narrow independently
+reviewable subset of Mesa's MIT-licensed `ac_descriptors.c` and
+`gfx10-rsrc.json` definitions.
+
+The private reference map now bakes reproducibly to 7,210,496 bytes with 164
+base textures occupying 4,780,032 pitched bytes and requiring 3,936 descriptor
+DWORDs. Two independent bakes produced SHA-256
+`33242fe611a896f8f26461f297e0f05f31c026a3ce0eab614d2e63f401a227d5`.
+This gate establishes base-image decoding and descriptor-table construction;
+the next gate consumes those tables in the native `base * lightmap` pipeline
+and carries the changed command stream through the 60,000-frame soak.

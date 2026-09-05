@@ -1,4 +1,5 @@
 #include "bsp_bundle.h"
+#include "bsp_texture_descriptor.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,6 +42,18 @@ int main(int argc, char **argv)
         printf(" lightmap=%ux%u lightmap_pixels=%u",
                view.lightmap_image->width, view.lightmap_image->height,
                view.lightmap_pixel_count);
+    if (view.textures) {
+        uint32_t descriptor_dwords = 0u;
+        if (bsp_texture_table_required_dwords(&view,
+                                                &descriptor_dwords) != 0) {
+            fprintf(stderr, "descriptor sizing failed\n");
+            free(data);
+            return 1;
+        }
+        printf(" textures=%u texture_bytes=%u descriptor_dwords=%u",
+               view.texture_count, view.texture_pixel_bytes,
+               descriptor_dwords);
+    }
     putchar('\n');
     free(data);
     return 0;

@@ -39,6 +39,22 @@ typedef struct BspBundleImage {
     uint32_t format;
 } BspBundleImage;
 
+enum {
+    BSP_BUNDLE_TEXTURE_TRANSPARENT = 1u,
+    BSP_BUNDLE_TEXTURE_FALLBACK = 2u,
+};
+
+typedef struct BspBundleTexture {
+    uint32_t offset;
+    uint32_t bytes;
+    uint32_t width;
+    uint32_t height;
+    uint32_t row_pitch;
+    uint32_t format;
+    uint32_t name_hash;
+    uint32_t flags;
+} BspBundleTexture;
+
 typedef struct BspBundleView {
     const void *data;
     size_t bytes;
@@ -51,6 +67,10 @@ typedef struct BspBundleView {
     const BspBundleImage *lightmap_image;
     const uint8_t *lightmap_pixels;
     uint32_t lightmap_pixel_count;
+    const BspBundleTexture *textures;
+    uint32_t texture_count;
+    const uint8_t *texture_pixels;
+    uint32_t texture_pixel_bytes;
     float camera_position[3];
     float camera_forward[3];
 } BspBundleView;

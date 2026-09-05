@@ -33,6 +33,7 @@ covered by synthetic host tests.
 | `ps5_videoout` | Owns VideoOut open, equeue/event setup, flip rate, buffer registration and ordered teardown. | Host fault injection covers every acquisition boundary and the FW 12.02 `RESOURCE_BUSY` unregister behavior; standalone hardware runs completed through VideoOut close and memory release. |
 | `native/main.c` | Joins the extracted units into the complete two-buffer renderer and native lifecycle. | The exact standalone build completed 300-frame strict validation and a 10,000-frame hardware soak on FW 12.02. |
 | `tools/build_native.sh` | Fetches/verifies the pinned public foundation, builds `gfx1013` shaders and metadata, compiles, links, signs and packages `PPSA99997`. | Its output is ignored, inspected after signing and identified by SHA-256 in every accepted hardware run. |
+| `bsp_texture_descriptor` | Emits linear RGBA8 image and sampler SRDs plus one base/lightmap table per BSP texture. | Exact GFX10.3 words, 48-bit address/alignment limits, padded pitch, repeat/clamp modes, full-table sizing and forged-view failures are host-tested against the public Mesa register contract. |
 
 These units replace laboratory-prefixed prototypes with project-owned names
 and interfaces. Their behavior was exercised by the private native integration
