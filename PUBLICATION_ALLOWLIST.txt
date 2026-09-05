@@ -135,6 +135,7 @@ tests/test_build_shader.py
 tests/test_generate_agc_metadata.py
 tests/test_generate_bsp_build_metadata.py
 tests/test_native_contract.py
+tests/test_validate_bsp_noclip_evidence.py
 tools/audit_publication.py
 tools/build_shader.py
 tools/generate_agc_metadata.py
@@ -143,4 +144,5 @@ tools/package_release.sh
 tools/build_native.sh
 tools/bake_bsp.py
 tools/inspect_bsp_bundle.c
+tools/validate_bsp_noclip_evidence.py
 docs/BSP_VIEWER_PHASE1.md

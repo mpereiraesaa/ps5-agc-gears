@@ -1112,6 +1112,7 @@ int main(void)
         (unsigned long long)run.telemetry.errors);
     const int noclip_valid =
         run.telemetry.errors == 0u &&
+        run.telemetry.present_interval_over_budget == 0u &&
         renderer.pad_read_errors == 0u &&
         renderer.noclip.sampled_frames == BSP_GATE_FRAME_COUNT &&
         renderer.noclip.connected_frames == BSP_GATE_FRAME_COUNT &&

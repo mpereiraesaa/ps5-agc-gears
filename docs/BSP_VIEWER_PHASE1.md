@@ -100,5 +100,45 @@ stricter than merely surviving 10,000 frames: every frame must have a connected
 DualSense sample with no read error, at least 600 frames must translate, at
 least 120 must look, and accumulated movement must reach 100 units. GPU and
 VideoOut ownership, periodic guards, final readback and zero renderer errors
-remain mandatory. `BSP_NOCLIP_SOAK_COMPLETE` is emitted only after all of those
-conditions pass; hardware evidence for this gate is not yet established.
+remain mandatory. No present interval may exceed the telemetry budget.
+`BSP_NOCLIP_SOAK_COMPLETE` is emitted only after all of those conditions pass.
+
+Private evidence can be checked independently without adding the transcript or
+map to the publication boundary:
+
+```sh
+python3 tools/validate_bsp_noclip_evidence.py /private/run.json \
+  --bundle-sha256 "$PRIVATE_BUNDLE_SHA256" --bundle-bytes "$PRIVATE_BUNDLE_BYTES"
+```
+
+The validator fails closed on identity, protocol, transcript hash and size,
+sequence continuity, heartbeat cadence, exact token bookends, controller
+continuity, movement thresholds, frame budget, readback, guards and clean BYE.
+
+## Gate 2 hardware evidence
+
+The independently archived run
+`20260905T202655848Z_PPSA99997_ps5-agc-gears_0x289eef5f0458` passed on GFX1013
+firmware 12.02 from source commit
+`6f19f8eee94ebca8cee2ccaebd66b3df6844c874`:
+
+- signed `eboot.bin` SHA-256:
+  `697940e2f8d6d0612309f9a8f873335581dfeb13ce9e57409b9b2b8c12243bee`;
+- the same private Gate 1 bundle identity, with 10,000 completed frames and
+  10,000 connected DualSense samples;
+- 2,018 translating frames, 678 looking frames, 6,735.199 accumulated units
+  and 4,011 input changes, with zero pad read errors;
+- exact VideoOut token bookends, zero over-budget present intervals, intact
+  guards and zero renderer errors;
+- identical full-buffer readback `0e064ce046c6ebbb`, with 2,073,600 bright
+  pixels in each buffer;
+- clean `BSP_NOCLIP_SOAK_COMPLETE` BYE after 197 contiguous `ps5log/1`
+  records; transcript SHA-256
+  `2c8d0307d5de3d0be5350c6798e7f1376c954959b72ae2ff3c74250e1b749ba4`.
+
+The accompanying 1280x720 Remote Play capture has SHA-256
+`7549bd0f83d6d19c03b808f73045a206ca01f0736c4de7f7b01cd87534c9de2a`
+and shows the camera at a visibly different map position. It reused the
+console's existing registered Chiaki entry; no pairing or reinitialization was
+performed. The title was closed by exact identity and all development services
+remained healthy.

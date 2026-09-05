@@ -69,6 +69,7 @@ test: $(addprefix $(BUILD)/,$(TESTS))
 	python3 tests/test_generate_bsp_build_metadata.py
 	python3 tests/test_native_contract.py
 	python3 tests/test_bake_bsp.py
+	python3 tests/test_validate_bsp_noclip_evidence.py
 	rm -rf build tools/__pycache__ tests/__pycache__
 
 bsp-bundle: $(BUILD)/inspect_bsp_bundle
