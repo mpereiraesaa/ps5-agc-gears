@@ -55,3 +55,19 @@ Most remaining work does not require discovering a new NID.
 Firmware analysis should record symbol/NID, module hash, calling convention,
 arguments, cursor advance, side effects and confidence. No proprietary bytes or
 substantial decompilation enter this repository.
+
+## Compiler evidence — 2026-09-05
+
+Clean-room Plasma and Cube microshaders were compiled offline with public LLPC
+for `gfx1013`; both produced relocation-free PAL ELFs with AMDGPU flags `0x42`.
+
+- Plasma's four floats (`time`, inverse width/height and phase) map directly to
+  pixel-stage user data 0–3. Including the internal table pointer, PAL reports
+  five PS user SGPRs. No buffer descriptor or new import is needed.
+- Cube's 4×4 MVP maps directly to 16 pre-raster user-data words. Interleaved
+  position and normal inputs cause PAL to request the compiler-defined vertex
+  buffer table pointer (`0x1000000f`); the stage reports 20 user SGPRs.
+
+This narrows the next ABI investigation to the two vertex buffer descriptors
+and their table pointer. It does not require reverse engineering a general
+uniform subsystem.
