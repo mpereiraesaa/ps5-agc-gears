@@ -39,6 +39,10 @@ Most remaining work does not require discovering a new NID.
   but not a gate; a
   first implementation can expand the index list and retain
   `sceAgcDcbDrawIndexAuto`.
+  The direct indexed builder's sanitized firmware contract is four arguments
+  `(writer, count, 64-bit GPU index address, modifier)` and six command DWORDs.
+  Its modifier semantics are not yet public enough to make this the default,
+  so expanded non-indexed geometry remains the publication-safe first path.
 - `sceVideoOutGetFlipStatus` (`SbU3dwp80lQ`) and
   `sceVideoOutWaitVblank` (`j6RaAUlaLv0`): potentially useful for
   telemetry/pacing, but the existing exact flip event is sufficient for
@@ -136,11 +140,15 @@ The public no-HTILE state also requires `DB_RENDER_CONTROL` to disable depth
 and stencil compression and `DB_STENCIL_INFO` to disable tiled stencil. These
 are not optional consequences of the 16-entry target block. A depth-enabled,
 write-enabled `LESS_EQUAL` state is a separate `DB_DEPTH_CONTROL` value. The
-offline register plan is reproducible, but clear visibility is intentionally
-still a gate: the observed post-draw completion ACQUIRE covers its private
-label, not the depth allocation. The implementation must validate an explicit
-CPU-fill, DMA-plus-range-ACQUIRE, or graphics slow-clear path before claiming
-reusable per-frame depth.
+offline register plan is reproducible. The selected first-use clear is one
+immediate `DMA_DATA` fill of all `0x870000` bytes with `0x3f800000`, routed
+through L2 with write-confirm and `cp_sync` enabled. Public PAL and RADV define
+that combination as a completed, coherent CP-DMA write before subsequent 3D
+work; the same builder mode has already filled and presented a larger surface
+in the private hardware lab. No pre-draw range ACQUIRE is inferred from the
+captured label-only ACQUIRE. Actual depth-test consumption and target reuse
+remain hardware gates, and the post-draw DB completion/ownership chain must be
+retained.
 
 ## Frame ownership contract
 
