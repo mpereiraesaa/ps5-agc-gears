@@ -19,12 +19,13 @@ typedef enum GearsRunState {
     GEARS_RUN_COMPLETE = 1,
     GEARS_RUN_PRE_SUBMIT_FAILURE = 2,
     GEARS_RUN_POST_SUBMIT_RETAIN = 3,
+    GEARS_RUN_TELEMETRY_FAILURE = 4,
 } GearsRunState;
 
 typedef struct GearsFrameRunnerInput {
     uint64_t start_ns;
     uint64_t first_flip_token;
-    uint64_t frame_deadline_ns;
+    uint64_t present_interval_budget_ns;
     uint32_t srd_tables[GEARS_SCENE_DRAW_COUNT];
     uint32_t vertex_counts[GEARS_SCENE_DRAW_COUNT];
     GearsNowNsFn now_ns;
@@ -63,6 +64,7 @@ typedef struct GearsFrameLoop {
     GearsFrameRunnerResult result;
     uint32_t active_frames;
     uint64_t loop_start_ns;
+    uint64_t last_retire_ns;
     int initialized;
 } GearsFrameLoop;
 

@@ -299,14 +299,18 @@ static void frame_telemetry(uint64_t frame,
         return;
     (void)ps5log_printf(terminal_error ? PS5LOG_ERR : PS5LOG_INFO,
         "GEARS_FRAME frame=%llu completed=%llu compose_avg_ns=%llu "
-        "gpu_wait_avg_ns=%llu video_wait_avg_ns=%llu deadline_misses=%llu "
+        "gpu_wait_avg_ns=%llu video_wait_avg_ns=%llu "
+        "present_interval_avg_ns=%llu present_interval_max_ns=%llu "
+        "present_interval_over_budget=%llu "
         "errors=%llu terminal=%d",
         (unsigned long long)frame,
         (unsigned long long)snapshot->frames_completed,
         (unsigned long long)snapshot->compose_ns_average,
         (unsigned long long)snapshot->gpu_wait_ns_average,
         (unsigned long long)snapshot->video_wait_ns_average,
-        (unsigned long long)snapshot->deadline_misses,
+        (unsigned long long)snapshot->present_interval_ns_average,
+        (unsigned long long)snapshot->present_interval_ns_max,
+        (unsigned long long)snapshot->present_interval_over_budget,
         (unsigned long long)snapshot->errors, terminal_error);
 }
 
@@ -636,7 +640,7 @@ int main(void)
     GearsFrameRunnerInput input = {0};
     input.start_ns = now_ns(0);
     input.first_flip_token = UINT64_C(0x0000420000000001);
-    input.frame_deadline_ns = UINT64_C(16666667);
+    input.present_interval_budget_ns = UINT64_C(17000000);
     memcpy(input.srd_tables, renderer.srd_tables, sizeof(input.srd_tables));
     memcpy(input.vertex_counts, renderer.vertex_counts,
            sizeof(input.vertex_counts));

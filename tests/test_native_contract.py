@@ -17,6 +17,8 @@ def main() -> None:
         'gears_frame_loop_step(&loop)',
         '"GEARS_HEARTBEAT frames=%llu max_in_flight=%u "',
         '"retired_fences=zero tokens=exact guards=intact errors=%llu"',
+        '"present_interval_avg_ns=%llu present_interval_max_ns=%llu "',
+        'input.present_interval_budget_ns = UINT64_C(17000000)',
     )
     for item in required:
         if item not in source:
@@ -30,7 +32,8 @@ def main() -> None:
         if unit not in builder:
             raise SystemExit(f"foundation host tool source missing: {unit}")
     for obsolete in ("PS5_GEARS_FRAME_COUNT", "PS5_GEARS_RELEASE_CHUNK_FRAMES",
-                     "PS5_GEARS_VISIBLE_HOLD_SECONDS", "gears_run_frames("):
+                     "PS5_GEARS_VISIBLE_HOLD_SECONDS", "gears_run_frames(",
+                     "deadline_misses"):
         if obsolete in source or obsolete in builder:
             raise SystemExit(f"production runtime still contains test policy: {obsolete}")
     print("native telemetry and teardown source contract passed")

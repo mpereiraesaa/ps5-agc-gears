@@ -62,7 +62,7 @@ static GearsFrameRunnerInput make_input(Fake *fake)
     memset(&input, 0, sizeof(input));
     input.start_ns = fake->now;
     input.first_flip_token = 0x420000000001;
-    input.frame_deadline_ns = 10000;
+    input.present_interval_budget_ns = 10000;
     input.srd_tables[0] = 0x10000; input.srd_tables[1] = 0x20000;
     input.srd_tables[2] = 0x30000;
     input.vertex_counts[0] = 1200; input.vertex_counts[1] = 600;
@@ -125,5 +125,20 @@ int main(void)
     assert(gears_frame_loop_result(&loop, &result) == 0);
     assert(result.state == GEARS_RUN_POST_SUBMIT_RETAIN);
     assert(result.failed_frame == 0 && result.callback_result == -3);
+
+    /* A post-completion telemetry overflow must stop cleanly without leaving
+     * the retired slot active in the runner. */
+    memset(&fake, 0, sizeof(fake)); fake.now = 1000000000;
+    input = make_input(&fake);
+    assert(gears_frame_loop_init(&loop, &input) == 0);
+    assert(gears_frame_loop_step(&loop) == 0);
+    assert(gears_frame_loop_step(&loop) == 0);
+    loop.stats.frames_completed = UINT64_MAX;
+    assert(gears_frame_loop_step(&loop) == 1);
+    assert(gears_frame_loop_result(&loop, &result) == 0);
+    assert(result.state == GEARS_RUN_TELEMETRY_FAILURE);
+    assert(result.failed_frame == 0 && result.callback_result == -4);
+    assert(loop.pending[0].active == 0);
+    assert(loop.active_frames == 1 && fake.in_flight == 1);
     return 0;
 }

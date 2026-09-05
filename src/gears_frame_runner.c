@@ -46,16 +46,30 @@ static int retire(GearsFrameLoop *loop, GearsFrameLoopPending *pending)
                               rc ? rc : -3);
 
     const uint64_t frame_end = loop->input.now_ns(loop->input.user);
-    const int missed = loop->input.frame_deadline_ns &&
-        frame_end - pending->frame_start > loop->input.frame_deadline_ns;
-    if (gears_telemetry_record_frame(&loop->stats, pending->compose_ns,
-                                     gpu_end - gpu_start,
-                                     video_end - video_start, missed) != 0)
-        return -1;
-    ++loop->result.frames_completed;
-    snapshot(loop, pending->frame.frame_index, 0, 0);
+    const uint64_t present_interval = loop->last_retire_ns
+        ? frame_end - loop->last_retire_ns : 0u;
+    const int over_budget = present_interval &&
+        loop->input.present_interval_budget_ns &&
+        present_interval > loop->input.present_interval_budget_ns;
+
+    /* GPU and VideoOut ownership are complete. Release the runner slot before
+     * fallible accounting so both state machines remain consistent. */
     pending->active = 0;
     --loop->active_frames;
+    loop->last_retire_ns = frame_end;
+    if (gears_telemetry_record_frame(&loop->stats, pending->compose_ns,
+                                     gpu_end - gpu_start,
+                                     video_end - video_start,
+                                     present_interval, over_budget) != 0) {
+        loop->result.state = GEARS_RUN_TELEMETRY_FAILURE;
+        loop->result.failed_frame = pending->frame.frame_index;
+        loop->result.callback_result = -4;
+        gears_telemetry_record_error(&loop->stats);
+        snapshot(loop, pending->frame.frame_index, 1, 0);
+        return 1;
+    }
+    ++loop->result.frames_completed;
+    snapshot(loop, pending->frame.frame_index, 0, 0);
     return 0;
 }
 
