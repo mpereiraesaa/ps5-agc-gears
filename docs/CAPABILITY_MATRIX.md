@@ -124,9 +124,13 @@ them through generic GFX10 AddrLib. This proves the fixed depth swizzle family
 is `ADDR_SW_64KB_Z_X`: GFX1013 does not enable RB+ there, so the variable-block
 depth mode is unavailable. It does **not** prove a complete byte layout.
 AddrLib also requires the device's real `GB_ADDR_CONFIG` (pipe count,
-interleave and compression topology). No Navi10-derived or emulator-default
-value is treated as PS5 fact, and the renderer must fail closed until that
-topology input is independently established.
+interleave and compression topology), so no Navi10-derived or emulator-default
+value is treated as PS5 fact. A narrow exception is topology-independent: a
+single-mip, single-sample D32 `64KB_Z_X` main plane uses 128×128-pixel blocks.
+At 1920×1080 its 64-KiB-aligned footprint is `0x870000` bytes, and a uniform
+`1.0f` initialization is simply `0x3f800000` repeated across that allocation;
+internal swizzle permutations cannot change a uniform field. Per-coordinate
+CPU addressing and HTILE remain blocked on the real topology.
 
 ## Frame ownership contract
 
