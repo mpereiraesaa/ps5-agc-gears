@@ -247,3 +247,15 @@ all 100 controller heartbeats, 60,000-frame terminal telemetry, descriptor and
 sampler contract, readback visibility and clean structured shutdown. Hardware
 results and the Remote Play capture are recorded only after the signed artifact
 passes that validator.
+
+### Remote Play / DualSense handoff
+
+On the reference Ubuntu/PS5 setup, Chiaki owns interactive input while its
+Remote Play session is open and maps the workstation keyboard to the console.
+Taking the physical DualSense to play directly on the PS5 closes that Chiaki
+session and transfers control to the console. Consequently, visual capture and
+physical-controller exercise are deliberately sequential: inspect or capture
+through the already registered Chiaki entry, then let the operator take the
+DualSense and judge the remaining soak through `ps5log/1`. If a moved-camera
+Remote Play image is required, reconnect the same registered entry after the
+finite run. This workflow never pairs, re-registers or synthesizes input.
