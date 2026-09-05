@@ -11,23 +11,33 @@ void gears_telemetry_reset(GearsTelemetry *telemetry)
 
 int gears_telemetry_record_frame(GearsTelemetry *telemetry,
                                  uint64_t compose_ns, uint64_t gpu_wait_ns,
-                                 uint64_t video_wait_ns, int deadline_missed)
+                                 uint64_t video_wait_ns,
+                                 uint64_t present_interval_ns,
+                                 int present_interval_over_budget)
 {
     if (!telemetry || telemetry->frames_completed == UINT64_MAX ||
-        (deadline_missed && telemetry->deadline_misses == UINT64_MAX) ||
+        (present_interval_ns && telemetry->present_intervals == UINT64_MAX) ||
+        (present_interval_over_budget &&
+         telemetry->present_interval_over_budget == UINT64_MAX) ||
         UINT64_MAX - telemetry->compose_ns_total < compose_ns ||
         UINT64_MAX - telemetry->gpu_wait_ns_total < gpu_wait_ns ||
-        UINT64_MAX - telemetry->video_wait_ns_total < video_wait_ns)
+        UINT64_MAX - telemetry->video_wait_ns_total < video_wait_ns ||
+        UINT64_MAX - telemetry->present_interval_ns_total < present_interval_ns)
         return -1;
     ++telemetry->frames_completed;
     telemetry->compose_ns_total += compose_ns;
     telemetry->gpu_wait_ns_total += gpu_wait_ns;
     telemetry->video_wait_ns_total += video_wait_ns;
+    telemetry->present_interval_ns_total += present_interval_ns;
     telemetry->compose_ns_max = maximum(telemetry->compose_ns_max, compose_ns);
     telemetry->gpu_wait_ns_max = maximum(telemetry->gpu_wait_ns_max, gpu_wait_ns);
     telemetry->video_wait_ns_max = maximum(telemetry->video_wait_ns_max,
                                             video_wait_ns);
-    if (deadline_missed) ++telemetry->deadline_misses;
+    telemetry->present_interval_ns_max = maximum(
+        telemetry->present_interval_ns_max, present_interval_ns);
+    if (present_interval_ns) ++telemetry->present_intervals;
+    if (present_interval_over_budget)
+        ++telemetry->present_interval_over_budget;
     return 0;
 }
 
@@ -50,10 +60,16 @@ int gears_telemetry_snapshot(const GearsTelemetry *telemetry,
         snapshot->video_wait_ns_average = telemetry->video_wait_ns_total /
                                           telemetry->frames_completed;
     }
+    if (telemetry->present_intervals)
+        snapshot->present_interval_ns_average =
+            telemetry->present_interval_ns_total / telemetry->present_intervals;
     snapshot->compose_ns_max = telemetry->compose_ns_max;
     snapshot->gpu_wait_ns_max = telemetry->gpu_wait_ns_max;
     snapshot->video_wait_ns_max = telemetry->video_wait_ns_max;
-    snapshot->deadline_misses = telemetry->deadline_misses;
+    snapshot->present_interval_ns_max = telemetry->present_interval_ns_max;
+    snapshot->present_intervals = telemetry->present_intervals;
+    snapshot->present_interval_over_budget =
+        telemetry->present_interval_over_budget;
     snapshot->errors = telemetry->errors;
     return 0;
 }

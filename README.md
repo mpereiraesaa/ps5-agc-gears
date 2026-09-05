@@ -1,8 +1,8 @@
 # PS5 AGC Gears
 
-Clean-room, source-reproducible graphics demo for native PlayStation 5
-homebrew. The project is being prepared to demonstrate a small hardware-
-accelerated scene through AGC using independently authored `gfx1013` shaders.
+Clean-room, source-reproducible, hardware-accelerated graphics demo for native
+PlayStation 5 homebrew. It renders a continuous three-gear scene through AGC
+using independently authored `gfx1013` shaders.
 
 > **Development status:** this repository builds a complete native title
 > from independently authored source plus a pinned public foundation. The exact
@@ -29,10 +29,13 @@ repository rendered the animated three-gear scene for 10,000 frames:
 This is evidence for one tested console and firmware, not a universal
 compatibility claim.
 
-The current strict reference is the uninterrupted 60,000-frame run
+The strict finite reference is the uninterrupted 60,000-frame run
 `20260905T144120445Z_PPSA99997_ps5-agc-gears_0x15c32a4befaa`: its opening
 identity, ownership markers, zero renderer errors and gap-free teardown all
-passed the documented `ps5log/1` contract.
+passed the documented `ps5log/1` contract. It predates the continuous runtime
+at repository HEAD. The current lifecycle has separate hardware evidence up to
+25,560 completed frames with healthy heartbeats and operator closure; see
+`docs/HARDWARE_VALIDATION.md`.
 
 ## Intended contents
 
@@ -155,6 +158,6 @@ GPL-3.0-or-later. This is compatible with the boilerplate from which the native
 application shell is derived. Dependency licenses and required notices
 remain subject to the release audit.
 
-The intended future GitHub home is under
-[`mpereiraesaa`](https://github.com/mpereiraesaa). No remote repository has
-been created or published yet.
+The public repository is
+[`mpereiraesaa/ps5-agc-gears`](https://github.com/mpereiraesaa/ps5-agc-gears).
+Its `main` branch accepts changes only through pull requests.

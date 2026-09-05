@@ -77,8 +77,9 @@ The standalone FW 12.02 title has exercised this contract through a
 slots in flight using independent command buffers and fences, and retires each
 slot only after its fence and exact VideoOut token complete before reuse.
 
-`gears_telemetry` aggregates compose, GPU-wait and VideoOut-wait nanoseconds in
-memory, retaining averages and maxima plus deadline/error counters. Sampling is
+`gears_telemetry` aggregates compose, GPU-wait, VideoOut-wait and consecutive
+presentation-retirement intervals in memory, retaining averages and maxima
+plus interval-over-budget and error counters. Sampling is
 requested for frame zero, every 60 frames, every error and the final summary;
 the backend must not format or `fsync` one line per frame. Ownership transitions
 and errors remain immediate persistent checkpoints.
@@ -91,7 +92,9 @@ Composition failures are cancel-safe; ownership is marked submitted before
 entering the submit callback, so a submit/wait/token failure returns
 `POST_SUBMIT_RETAIN` with the exact token that must remain alive. Host tests
 cover 10,000 stepped-and-drained frames plus a separate 10,001-step continuous
-lifecycle.
+lifecycle. A fully retired slot is cleared before fallible telemetry accounting;
+an accounting overflow enters an explicit telemetry-failure state without
+reviving ownership already completed by GPU and VideoOut.
 
 `ps5_surface`, `ps5_present` and `ps5_frame_completion` are the first extracted
 backend units. They respectively plan the two registered display surfaces,

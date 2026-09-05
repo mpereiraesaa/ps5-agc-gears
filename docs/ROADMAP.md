@@ -6,7 +6,7 @@
 - [x] Choose repository name (`ps5-agc-gears`), GPL-3.0-or-later and local
   development identity `PPSA99997`.
 - [x] Confirm intended GitHub owner: `mpereiraesaa`.
-- [ ] Choose repository visibility and confirm the final distributable identity.
+- [x] Publish the repository publicly and confirm the development identity.
 - [x] Derive the standalone app from a pinned public boilerplate revision.
 - [x] Extract the AGC backend behind a small documented interface.
 - [x] Extract and host-test the first backend core: two-surface planning,
@@ -69,6 +69,8 @@
 - [x] Perform the fail-closed proprietary-material publication audit.
 - [x] Replace copied numbered stages with an isolated Git-worktree development
   workflow that reuses the tested renderer contracts.
-- [ ] Reproduce the archive from a fresh clone after the first publication
+- [ ] Reproduce the archive from a fresh clone after this reconciliation PR
   commit and compare its checksum.
-- [ ] Publish the repository and acknowledge upstream projects precisely.
+- [x] Publish the repository and acknowledge upstream projects precisely.
+- [x] Require pull requests on `main`; require the host CI check after this PR
+  establishes its final check context.

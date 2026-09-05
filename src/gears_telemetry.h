@@ -8,10 +8,13 @@ typedef struct GearsTelemetry {
     uint64_t compose_ns_total;
     uint64_t gpu_wait_ns_total;
     uint64_t video_wait_ns_total;
+    uint64_t present_interval_ns_total;
     uint64_t compose_ns_max;
     uint64_t gpu_wait_ns_max;
     uint64_t video_wait_ns_max;
-    uint64_t deadline_misses;
+    uint64_t present_interval_ns_max;
+    uint64_t present_intervals;
+    uint64_t present_interval_over_budget;
     uint64_t errors;
 } GearsTelemetry;
 
@@ -20,17 +23,22 @@ typedef struct GearsTelemetrySnapshot {
     uint64_t compose_ns_average;
     uint64_t gpu_wait_ns_average;
     uint64_t video_wait_ns_average;
+    uint64_t present_interval_ns_average;
     uint64_t compose_ns_max;
     uint64_t gpu_wait_ns_max;
     uint64_t video_wait_ns_max;
-    uint64_t deadline_misses;
+    uint64_t present_interval_ns_max;
+    uint64_t present_intervals;
+    uint64_t present_interval_over_budget;
     uint64_t errors;
 } GearsTelemetrySnapshot;
 
 void gears_telemetry_reset(GearsTelemetry *telemetry);
 int gears_telemetry_record_frame(GearsTelemetry *telemetry,
                                  uint64_t compose_ns, uint64_t gpu_wait_ns,
-                                 uint64_t video_wait_ns, int deadline_missed);
+                                 uint64_t video_wait_ns,
+                                 uint64_t present_interval_ns,
+                                 int present_interval_over_budget);
 void gears_telemetry_record_error(GearsTelemetry *telemetry);
 int gears_telemetry_snapshot(const GearsTelemetry *telemetry,
                              GearsTelemetrySnapshot *snapshot);

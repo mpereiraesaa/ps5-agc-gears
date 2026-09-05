@@ -31,7 +31,7 @@ The final classifier must observe, for the exact requested frame count:
 - terminal GPU fence zero before slot reuse;
 - matching VideoOut event token before backbuffer reuse;
 - intact color/depth guard words;
-- zero errors and nonzero timing interval;
+- zero errors and nonzero consecutive-presentation interval;
 - ordered unregister, event removal, VideoOut close, memory release and AGC
   unload;
 - `BYE` with a gap-free final sequence.
@@ -50,6 +50,12 @@ runtime session. Automated soaks use the exact same binary and let the
 supervisor close the exact title after observing the requested continuous frame
 target and healthy invariants. Historical finite runs remain reproducible
 evidence, not production architecture.
+
+Current frame records report average GPU/VideoOut waits plus average and maximum
+intervals between consecutive completed presentations. The 17 ms budget count
+is evaluated on that interval, not on prepare-to-retire latency. Older captures'
+`deadline_misses` field used the latter and must not be interpreted as dropped
+frames.
 
 ## Development workflow
 

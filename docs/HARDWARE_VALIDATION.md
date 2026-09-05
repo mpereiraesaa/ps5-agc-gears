@@ -5,6 +5,28 @@ They are not compatibility claims for other firmware or consoles. Run logs and
 captures live in the private parent laboratory; this public boundary records
 only sanitized identifiers, hashes, outcomes and known limitations.
 
+## Continuous production-runtime evidence
+
+The production lifecycle at repository HEAD has no frame limit and is closed
+by the PS5 **Close Game** action. Run
+`20260905T152643467Z_PPSA99997_ps5-agc-gears_0x183d28b1c66c` used that
+continuous path for 25,560 completed frames. It emitted healthy heartbeats
+through frame 25,200 with two frames in flight, exact retired fences/tokens,
+intact guards and zero renderer errors. Transcript SHA-256:
+`f618b9843799f9c4fe4da1c859694152b8c7e49ab6c554bdb067112210651feb`.
+
+The stream ended at operator closure without BYE, as expected for system-level
+termination. It is evidence for the continuous runtime and ownership
+heartbeats, but not a strict application-teardown result. A second continuous
+session completed 14,160 frames and emitted healthy heartbeats through 10,800;
+its transcript SHA-256 is
+`40b2a92b647a131f1a116cdf24ecc9ebf69075ccbe02045ca464ab11a02a2914`.
+
+The strict finite runs below validate ordered application teardown, but predate
+the continuous production lifecycle. Together these evidence sets cover the
+current renderer path and the explicit teardown path without claiming that one
+artifact exercised both policies.
+
 ## Strict standalone 10,000-frame soak
 
 - Run: `20260905T143629462Z_PPSA99997_ps5-agc-gears_0x157f6aa15ea6`
@@ -45,9 +67,19 @@ This run established the corrected strict contract at the original soak size.
 - Teardown: complete, with gap-free BYE at sequence 1,011
 - Device span: approximately 1,001.025 seconds
 
-This is the strict reference run for the current standalone repository. It is
-six times longer than the original 10,000-frame gate and used one uninterrupted
-process, allocation set and VideoOut lifecycle.
+This is the strict finite reference. It is six times longer than the original
+10,000-frame gate and used one uninterrupted process, allocation set and
+VideoOut lifecycle. It predates the continuous runtime now at HEAD.
+
+## Classified incomplete finite run
+
+Run `20260905T150602724Z_PPSA99997_ps5-agc-gears_0x171c47e22690` requested
+60,000 finite frames but its transcript ended after 32,040 completed frames,
+without BYE or a terminal error marker. The preceding records report zero
+renderer errors and stable timing. It is classified as an unexplained external
+termination/truncated transcript—not a completed soak and not evidence of a GPU
+fault. Transcript SHA-256:
+`44af0e01addf3fa287111059af0137daa91b8e25b5d6a0ddbec9a25f4c2d1736`.
 
 ## Historical 10,000-frame soak
 
@@ -91,13 +123,13 @@ retained as regression history; the later strict 10,000-frame run supersedes it.
 
 ## Timing interpretation
 
-The historical deadline counter compares a complete frame interval against
-exactly 16,666,667 ns. The strict 300-frame and 10,000-frame runs respectively
-report 299 and 9,999 deadline misses because the measurement includes a few
-microseconds of CPU work in addition to the display interval. Typical command
-composition was about 2.2 microseconds, GPU wait about 1.1 milliseconds and
-VideoOut wait about 15.56 milliseconds. These counters are not ownership or GPU
-failures and are not represented as zero.
+The historical deadline counter measured a frame from preparation until
+retirement. With two frames in flight that interval spans pipeline depth and
+therefore reports approximately frames minus one. It is not a dropped-frame
+metric. HEAD replaces it with average/maximum intervals between consecutive
+retirements and a 17 ms over-budget count. Historical command composition was
+about 2.2 microseconds, GPU wait about 1.1 milliseconds and VideoOut wait about
+15.56 milliseconds.
 
 ## Acceptance rule for later soaks
 
