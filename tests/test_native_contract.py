@@ -7,6 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
     source = (ROOT / "native/main.c").read_text(encoding="utf-8")
     builder = (ROOT / "tools/build_native.sh").read_text(encoding="utf-8")
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    assets = (ROOT / "native/shader_assets.S").read_text(encoding="utf-8")
     required = (
         '"LOG_SCHEMA=3"',
         '"LOG_TRANSPORT=ps5log/1 tcp structured"',
@@ -36,6 +38,11 @@ def main() -> None:
                      "deadline_misses"):
         if obsolete in source or obsolete in builder:
             raise SystemExit(f"production runtime still contains test policy: {obsolete}")
+    if 'bsp_flat_shader_metadata.h' not in makefile:
+        raise SystemExit("BSP flat shader metadata build product missing")
+    for item in ('bsp_flat.gs.bin', 'bsp_flat.ps.bin'):
+        if item not in assets:
+            raise SystemExit(f"BSP flat shader native asset missing: {item}")
     print("native telemetry and teardown source contract passed")
 
 

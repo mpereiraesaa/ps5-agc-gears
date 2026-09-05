@@ -15,12 +15,15 @@ tested, reusable interfaces.
 | Indexed AGC draw | ABI documented, unused | Six-DWORD checked writer with a full GPU-span guard | Synthetic builder cursor and visibility tests |
 | Map command sizing | Fixed 120 DWORD | Preflighted `draw_count * 29` flat-map composition | Exact draw/DWORD and insufficient-capacity tests |
 | Command allocation | Two fixed 4 KiB slots | Draw-count-sized, 64 KiB-aligned dual slots with separated fences | Overflow, offsets and capacity plan tests |
-| Flat map shader | Missing | Position + MVP + per-face color pipeline source | Source contract in the host gate |
+| Flat map shader | Missing | Position + MVP + per-face color pipeline compiled and embedded beside Gears | GFX1013 PAL metadata, zero-relocation ELF and native-link checks |
 | Native fixed-camera frame | Missing | Next hardware-bearing change | Fresh native artifact, `ps5log/1`, exact readback hash |
 
 ## Gate 1 execution
 
 1. Run `make all`; no console operation is allowed until it is green.
+   `make shaders` compiles both `gears_lit.pipe` and `bsp_flat.pipe`, derives
+   namespaced AGC metadata for each pipeline and emits separately named native
+   stage blobs. Generated shader products remain under `build/`.
 2. Bake a private map with `make bsp-bundle BSP_INPUT=/private/path/map.bsp`.
    `.bsp`, `.wad` and `.ps5bsp` files are ignored globally and are never release
    inputs. The target validates the generated file through the C runtime parser.

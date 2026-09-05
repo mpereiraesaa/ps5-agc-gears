@@ -81,9 +81,16 @@ shaders:
 	@test -n "$(LLVM_READELF)" || { echo 'LLVM_READELF is required' >&2; exit 2; }
 	python3 tools/build_shader.py --amdllpc "$(AMDLLPC)" \
 		--readelf "$(LLVM_READELF)" --output-dir build/shaders
+	python3 tools/build_shader.py --pipe shaders/bsp_flat.pipe --name bsp_flat \
+		--amdllpc "$(AMDLLPC)" --readelf "$(LLVM_READELF)" \
+		--output-dir build/shaders
 	python3 tools/generate_agc_metadata.py \
 		--manifest build/shaders/gears_lit.manifest.json \
 		--output build/generated/gears_shader_metadata.h
+	python3 tools/generate_agc_metadata.py \
+		--manifest build/shaders/bsp_flat.manifest.json \
+		--output build/generated/bsp_flat_shader_metadata.h \
+		--prefix BSP_FLAT --symbol-prefix ps5_bsp_flat
 
 native:
 	bash tools/build_native.sh
