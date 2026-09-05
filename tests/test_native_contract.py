@@ -64,6 +64,29 @@ def main() -> None:
             raise SystemExit(f"BSP native gate contract missing: {item}")
     if "BSP viewer requires PS5LOG_DEV_CONF" not in builder:
         raise SystemExit("BSP release must fail closed without TCP config")
+    for item in (
+        "BSP_NOCLIP requires BSP_BUNDLE",
+        "-DPS5_BSP_NOCLIP=1",
+        "src/bsp_noclip.c",
+    ):
+        if item not in builder:
+            raise SystemExit(f"BSP noclip native build contract missing: {item}")
+    for item in (
+        "BSP_GATE_FRAME_COUNT = 10000u",
+        "scePadReadState(",
+        "bsp_noclip_step(",
+        "bsp_flat_update_camera(",
+        "BSP_NOCLIP_PAD_READY sticks=dual triggers=vertical",
+        "BSP_LOOP_BEGIN mode=noclip-soak",
+        "BSP_NOCLIP_SOAK_COMPLETE frames=%llu",
+        "BSP_NOCLIP_MIN_MOVING_FRAMES = 600u",
+        "BSP_NOCLIP_MIN_LOOKING_FRAMES = 120u",
+        'ps5log_close("bsp-noclip-soak-complete")',
+    ):
+        if item not in source:
+            raise SystemExit(f"BSP noclip runtime contract missing: {item}")
+    if "bsp-noclip-native-release" not in makefile or "BSP_NOCLIP=1" not in makefile:
+        raise SystemExit("BSP noclip release target missing")
     print("native telemetry and teardown source contract passed")
 
 

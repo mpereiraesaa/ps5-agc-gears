@@ -12,5 +12,8 @@ int bsp_flat_build_scene(BspFlatDraw *out, uint32_t capacity,
 int bsp_flat_build_clear(BspFlatDraw *out, BspBundleVertex vertices[3],
                          uint32_t indices[3],
                          uint32_t vertex_srd_table_address);
+int bsp_flat_update_camera(BspFlatDraw *draws, uint32_t draw_count,
+                           const float position[3], const float forward[3],
+                           float aspect_ratio);
 
 #endif

@@ -67,8 +67,22 @@ int main(void)
         assert(value(draws[0].sh_words[word]) >= 0.25f &&
                value(draws[0].sh_words[word]) <= 0.95f);
     assert(value(draws[0].sh_words[19]) == 1.0f);
+    uint32_t original_mvp[16];
+    memcpy(original_mvp, draws[0].sh_words, sizeof(original_mvp));
+    const uint32_t original_color = draws[0].sh_words[16];
+    const float moved_position[3] = {64.0f, 40.0f, -16.0f};
+    const float moved_forward[3] = {-1.0f, 0.0f, 0.0f};
+    assert(bsp_flat_update_camera(draws, 2u, moved_position, moved_forward,
+                                  16.0f / 9.0f) == 0);
+    assert(memcmp(original_mvp, draws[0].sh_words, sizeof(original_mvp)) != 0);
+    assert(draws[0].sh_words[16] == original_color);
+    assert(draws[0].indices == indices && draws[1].indices == indices + 3u);
+    for (unsigned word = 0; word < 16u; ++word)
+        assert(draws[0].sh_words[word] == draws[1].sh_words[word]);
     bundle.camera_forward[2] = 0.0f;
     assert(bsp_flat_build_scene(draws, 2u, &bundle, 0x12340000u,
                                 16.0f / 9.0f) == -2);
+    assert(bsp_flat_update_camera(draws, 0u, moved_position, moved_forward,
+                                  16.0f / 9.0f) != 0);
     return 0;
 }

@@ -8,6 +8,7 @@
 #include "../src/bsp_bundle.h"
 #include "../src/bsp_command_plan.h"
 #include "../src/bsp_flat_scene.h"
+#include "../src/bsp_noclip.h"
 #include "../src/bsp_runtime_plan.h"
 #include "../src/ps5_agc_submit.h"
 #include "../src/ps5_color_target.h"
@@ -71,7 +72,13 @@ enum {
     GUARD_WORD = 0x51a6c3d9u,
     BSP_FIXED_COMMAND_DWORDS = 4096u,
     BSP_MAX_BUNDLE_BYTES = 64u * 1024u * 1024u,
+#ifdef PS5_BSP_NOCLIP
+    BSP_GATE_FRAME_COUNT = 10000u,
+    BSP_NOCLIP_MIN_MOVING_FRAMES = 600u,
+    BSP_NOCLIP_MIN_LOOKING_FRAMES = 120u,
+#else
     BSP_GATE_FRAME_COUNT = 600u,
+#endif
 };
 
 struct native_resources {
@@ -88,6 +95,7 @@ struct native_resources {
     int64_t bsp_offset;
     size_t command_bytes;
     size_t bsp_bytes;
+    int32_t pad_handle;
     struct ps5_videoout video;
     struct ps5_surface_plan surface;
     int agc_loaded;
@@ -102,6 +110,7 @@ struct native_resources {
     int depth_mapped;
     int bsp_allocated;
     int bsp_mapped;
+    int pad_opened;
 };
 
 struct native_renderer {
@@ -120,6 +129,11 @@ struct native_renderer {
     BspRuntimePlan bsp_plan;
     BspFlatDraw *bsp_draws;
     uint32_t bsp_draw_count;
+#ifdef PS5_BSP_NOCLIP
+    BspNoclipCamera noclip;
+    float last_camera_time;
+    uint64_t pad_read_errors;
+#endif
 #endif
     struct ps5_agc_submit_context submit;
     struct native_resources *resources;
@@ -285,6 +299,68 @@ static int prepare_bsp_scene(void)
     ps5_native_cache_flush(resources.bsp, resources.bsp_bytes);
     return 0;
 }
+
+#ifdef PS5_BSP_NOCLIP
+static int open_noclip_pad(void)
+{
+    int32_t user_id = -1;
+    int result = sceUserServiceInitialize(0);
+    if (result != 0)
+        return result;
+    result = sceUserServiceGetForegroundUser(&user_id);
+    if (result != 0 || user_id == -1)
+        return result != 0 ? result : -1;
+    result = scePadInit();
+    if (result != 0)
+        return result;
+    resources.pad_handle = scePadOpen(user_id, 0, 0, 0);
+    if (resources.pad_handle <= 0)
+        return resources.pad_handle != 0 ? resources.pad_handle : -1;
+    resources.pad_opened = 1;
+    return bsp_noclip_init(&renderer.noclip,
+                           renderer.bsp_bundle.camera_position,
+                           renderer.bsp_bundle.camera_forward);
+}
+
+static int update_noclip_camera(struct native_renderer *state,
+                                const GearsAnimationFrame *frame)
+{
+    struct ps5_pad_data pad;
+    memset(&pad, 0, sizeof(pad));
+    const int result = scePadReadState(state->resources->pad_handle, &pad);
+    if (result != 0)
+        ++state->pad_read_errors;
+    const BspNoclipInput input = {
+        pad.left_stick.x, pad.left_stick.y,
+        pad.right_stick.x, pad.right_stick.y,
+        pad.l2, pad.r2, result == 0 && pad.connected != 0,
+    };
+    const float delta = frame->frame_index == 0u ? 1.0f / 60.0f
+        : frame->time_seconds - state->last_camera_time;
+    state->last_camera_time = frame->time_seconds;
+    if (bsp_noclip_step(&state->noclip, &input, delta) != 0 ||
+        bsp_flat_update_camera(state->bsp_draws + 1u,
+            state->bsp_draw_count - 1u, state->noclip.position,
+            state->noclip.forward,
+            (float)state->resources->surface.width /
+                (float)state->resources->surface.height) != 0)
+        return -1;
+    if ((frame->frame_index + 1u) % 600u == 0u)
+        (void)ps5log_printf(PS5LOG_MARK,
+            "BSP_NOCLIP_INPUT frame=%llu connected=%llu moving=%llu "
+            "looking=%llu distance_milli=%llu changes=%llu hash=%016llx "
+            "read_errors=%llu",
+            (unsigned long long)frame->frame_index,
+            (unsigned long long)state->noclip.connected_frames,
+            (unsigned long long)state->noclip.moving_frames,
+            (unsigned long long)state->noclip.looking_frames,
+            (unsigned long long)(state->noclip.distance_travelled * 1000.0f),
+            (unsigned long long)state->noclip.input_changes,
+            (unsigned long long)state->noclip.input_hash,
+            (unsigned long long)state->pad_read_errors);
+    return 0;
+}
+#endif
 #endif
 
 static const struct ps5_videoout_ops video_ops = {
@@ -300,6 +376,10 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
     struct native_renderer *state = opaque;
     if (!frame || !state || frame->buffer >= 2u)
         return -1;
+#ifdef PS5_BSP_NOCLIP
+    if (update_noclip_camera(state, frame) != 0)
+        return -9;
+#endif
     uint32_t *const begin = state->commands[frame->buffer];
     uint32_t *const end = begin +
         state->command_slot_bytes / sizeof(uint32_t);
@@ -514,6 +594,13 @@ static int guards_intact(void)
 static int cleanup(void)
 {
     int result;
+#ifdef PS5_BSP_NOCLIP
+    if (resources.pad_opened &&
+        (result = scePadClose(resources.pad_handle)) != 0)
+        return result;
+    resources.pad_opened = 0;
+    resources.pad_handle = -1;
+#endif
     if (resources.video.handle >= 0) {
         result = ps5_videoout_close(&resources.video, &video_ops);
         log_result("videoout_close_chain", result);
@@ -621,7 +708,11 @@ static uint64_t bright_pixel_count(const void *data, size_t bytes)
 
 static void park_complete(void)
 {
+#ifdef PS5_BSP_NOCLIP
+    ps5log_close("bsp-noclip-soak-complete");
+#else
     ps5log_close("bsp-gate1-complete");
+#endif
     for (;;)
         (void)pause();
 }
@@ -642,6 +733,7 @@ int main(void)
     resources.command_offset = resources.framebuffer_offset =
         resources.shader_offset = resources.depth_offset = -1;
     resources.bsp_offset = -1;
+    resources.pad_handle = -1;
     resources.video.handle = -1;
     ps5log_config log_config;
     const char *log_path = 0;
@@ -663,10 +755,18 @@ int main(void)
                         config_result, log_result,
                         log_path ? log_path : "unavailable");
 #ifdef PS5_BSP_VIEWER
+#ifdef PS5_BSP_NOCLIP
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_NOCLIP_BOOT schema=1 target=gfx1013 fw=12.02 "
+        "bundle_sha256=%s bundle_bytes=%u soak_frames=%u",
+        PS5_BSP_BUNDLE_SHA256, PS5_BSP_BUNDLE_BYTES,
+        BSP_GATE_FRAME_COUNT);
+#else
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_BOOT schema=1 target=gfx1013 fw=12.02 color_clear=rt_draw "
         "bundle_sha256=%s bundle_bytes=%u",
         PS5_BSP_BUNDLE_SHA256, PS5_BSP_BUNDLE_BYTES);
+#endif
 #else
     (void)ps5log_line(PS5LOG_MARK,
         "GEARS_BOOT schema=1 target=gfx1013 fw=12.02 color_clear=rt_draw");
@@ -683,6 +783,14 @@ int main(void)
     result = load_bsp_bundle();
     if (result != 0)
         return fail_pre_submit("bsp_bundle_load", result);
+#ifdef PS5_BSP_NOCLIP
+    result = open_noclip_pad();
+    if (result != 0)
+        return fail_pre_submit("noclip_pad_open", result);
+    (void)ps5log_line(PS5LOG_MARK,
+        "BSP_NOCLIP_PAD_READY sticks=dual triggers=vertical "
+        "connected_required=true");
+#endif
     BspCommandPlan command_plan;
     if (bsp_command_plan(renderer.bsp_plan.scene_draw_count,
                          BSP_FIXED_COMMAND_DWORDS, &command_plan) != 0)
@@ -948,9 +1056,15 @@ int main(void)
     input.telemetry = frame_telemetry;
     input.user = &renderer;
 #ifdef PS5_BSP_VIEWER
+#ifdef PS5_BSP_NOCLIP
+    (void)ps5log_line(PS5LOG_MARK,
+        "BSP_LOOP_BEGIN mode=noclip-soak buffers=2 "
+        "color_dma=false depth_dma=true indexed=true frames=10000");
+#else
     (void)ps5log_line(PS5LOG_MARK,
         "BSP_LOOP_BEGIN mode=fixed-camera buffers=2 "
         "color_dma=false depth_dma=true indexed=true");
+#endif
 #else
     (void)ps5log_line(PS5LOG_MARK,
         "GEARS_LOOP_BEGIN mode=continuous buffers=2 "
@@ -964,6 +1078,8 @@ int main(void)
         result = gears_frame_loop_step(&loop);
         if (result != 0)
             park("bsp-submit-or-ownership-failure");
+        if ((frame + 1u) % 600u == 0u && !guards_intact())
+            park("guard-corruption");
     }
     result = gears_frame_loop_drain(&loop);
     GearsFrameRunnerResult run = {0};
@@ -983,6 +1099,43 @@ int main(void)
     const uint64_t second_hash = readback_hash(second, readback_bytes);
     const uint64_t first_bright = bright_pixel_count(first, readback_bytes);
     const uint64_t second_bright = bright_pixel_count(second, readback_bytes);
+#ifdef PS5_BSP_NOCLIP
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_NOCLIP_READBACK buffer0=%016llx buffer1=%016llx bytes=%llu "
+        "bright_pixels0=%llu bright_pixels1=%llu guards=intact "
+        "frames=%llu errors=%llu",
+        (unsigned long long)first_hash, (unsigned long long)second_hash,
+        (unsigned long long)readback_bytes,
+        (unsigned long long)first_bright,
+        (unsigned long long)second_bright,
+        (unsigned long long)run.frames_completed,
+        (unsigned long long)run.telemetry.errors);
+    const int noclip_valid =
+        run.telemetry.errors == 0u &&
+        renderer.pad_read_errors == 0u &&
+        renderer.noclip.sampled_frames == BSP_GATE_FRAME_COUNT &&
+        renderer.noclip.connected_frames == BSP_GATE_FRAME_COUNT &&
+        renderer.noclip.moving_frames >= BSP_NOCLIP_MIN_MOVING_FRAMES &&
+        renderer.noclip.looking_frames >= BSP_NOCLIP_MIN_LOOKING_FRAMES &&
+        renderer.noclip.distance_travelled >= 100.0f;
+    if (!noclip_valid)
+        park("noclip-input-or-movement-gate-failure");
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_NOCLIP_SOAK_COMPLETE frames=%llu connected_frames=%llu "
+        "moving_frames=%llu looking_frames=%llu distance_milli=%llu "
+        "input_changes=%llu input_hash=%016llx read_errors=%llu "
+        "tokens=exact guards=intact errors=%llu",
+        (unsigned long long)run.frames_completed,
+        (unsigned long long)renderer.noclip.connected_frames,
+        (unsigned long long)renderer.noclip.moving_frames,
+        (unsigned long long)renderer.noclip.looking_frames,
+        (unsigned long long)(renderer.noclip.distance_travelled * 1000.0f),
+        (unsigned long long)renderer.noclip.input_changes,
+        (unsigned long long)renderer.noclip.input_hash,
+        (unsigned long long)renderer.pad_read_errors,
+        (unsigned long long)run.telemetry.errors);
+    park_complete();
+#else
     const int readback_valid = first_hash == second_hash &&
         first_bright != 0u && first_bright == second_bright;
     (void)ps5log_printf(readback_valid ? PS5LOG_MARK : PS5LOG_ERR,
@@ -1003,6 +1156,7 @@ int main(void)
         "BSP_GATE1_COMPLETE fixed_camera=true readback_exact=true "
         "geometry_visible=true tokens=exact guards=intact");
     park_complete();
+#endif
 #else
     uint64_t last_guard_check = 0u;
     uint64_t last_heartbeat = 0u;

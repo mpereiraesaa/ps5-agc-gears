@@ -3,7 +3,7 @@ CFLAGS ?= -O2 -std=c11 -Wall -Wextra -Werror
 BUILD := build/host
 
 .PHONY: all test shaders bsp-bundle bsp-inspect native native-release \
-	bsp-native-release audit clean
+	bsp-native-release bsp-noclip-native-release audit clean
 all: test audit
 
 $(BUILD):
@@ -44,6 +44,7 @@ $(eval $(call test_rule,test_bsp_bundle,tests/test_bsp_bundle.c src/bsp_bundle.c
 $(eval $(call test_rule,test_bsp_command_plan,tests/test_bsp_command_plan.c src/bsp_command_plan.c src/bsp_flat_draw.c,))
 $(eval $(call test_rule,test_bsp_flat_draw,tests/test_bsp_flat_draw.c src/bsp_flat_draw.c,))
 $(eval $(call test_rule,test_bsp_flat_scene,tests/test_bsp_flat_scene.c src/bsp_flat_scene.c,-lm))
+$(eval $(call test_rule,test_bsp_noclip,tests/test_bsp_noclip.c src/bsp_noclip.c,-lm))
 $(eval $(call test_rule,test_bsp_runtime_plan,tests/test_bsp_runtime_plan.c src/bsp_runtime_plan.c,))
 $(eval $(call test_rule,test_ps5_bump_allocator,tests/test_ps5_bump_allocator.c src/ps5_bump_allocator.c,))
 $(eval $(call test_rule,inspect_bsp_bundle,tools/inspect_bsp_bundle.c src/bsp_bundle.c,-Isrc))
@@ -57,7 +58,7 @@ TESTS := test_gears_mesh test_gears_scene test_gears_frame_tracker \
 	test_ps5_submission test_ps5_direct_memory test_ps5_platform_abi \
 	test_ps5log_host test_ps5_shader_header test_ps5_agc_writer \
 	test_ps5_agc_submit test_ps5_videoout test_bsp_bundle test_bsp_command_plan \
-	test_bsp_flat_draw test_bsp_flat_scene test_bsp_runtime_plan \
+	test_bsp_flat_draw test_bsp_flat_scene test_bsp_noclip test_bsp_runtime_plan \
 	test_ps5_bump_allocator
 
 test: $(addprefix $(BUILD)/,$(TESTS))
@@ -104,6 +105,10 @@ native-release:
 
 bsp-native-release: bsp-bundle
 	BSP_BUNDLE="$(CURDIR)/build/bsp/map.ps5bsp" bash tools/build_native.sh
+
+bsp-noclip-native-release: bsp-bundle
+	BSP_BUNDLE="$(CURDIR)/build/bsp/map.ps5bsp" BSP_NOCLIP=1 \
+		bash tools/build_native.sh
 
 audit:
 	python3 tools/audit_publication.py

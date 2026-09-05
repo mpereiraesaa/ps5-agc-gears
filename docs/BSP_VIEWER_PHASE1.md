@@ -83,3 +83,22 @@ reinitializing or refocusing the stream. Its 1280x720 direct window capture has
 SHA-256 `e16b7fca59fad6ba3ff1aaf75364b6288aebfd8be40fe079566c5fbc335ecebd`
 and visibly shows the flat-shaded map geometry. The title was again closed by
 exact identity while Chiaki remained running.
+
+## Gate 2 noclip contract
+
+`make bsp-noclip-native-release` preserves the fixed-camera build as a
+separate reproducible mode and adds the legacy ScePad ABI only to the noclip
+artifact. The left stick moves forward/back and strafes, the right stick
+controls yaw/pitch, and L2/R2 descend/ascend in the baker's Y-up coordinates.
+Both sticks use a 12-count deadzone and movement is normalized before applying
+a 320-unit-per-second speed.
+
+The host regression runs 10,000 deterministic camera samples and checks input
+continuity, finite transforms, accumulated distance and live MVP replacement
+without modifying draw colors, indices or descriptors. The native gate is
+stricter than merely surviving 10,000 frames: every frame must have a connected
+DualSense sample with no read error, at least 600 frames must translate, at
+least 120 must look, and accumulated movement must reach 100 units. GPU and
+VideoOut ownership, periodic guards, final readback and zero renderer errors
+remain mandatory. `BSP_NOCLIP_SOAK_COMPLETE` is emitted only after all of those
+conditions pass; hardware evidence for this gate is not yet established.

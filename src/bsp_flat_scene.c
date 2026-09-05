@@ -136,18 +136,11 @@ int bsp_flat_build_scene(BspFlatDraw *out, uint32_t capacity,
         vertex_srd_table_address == 0u || !(aspect_ratio > 0.0f) ||
         !__builtin_isfinite(aspect_ratio))
         return -1;
-    Matrix4 view;
-    if (view_matrix(bundle->camera_position, bundle->camera_forward, &view) != 0)
-        return -2;
-    const Matrix4 projection = perspective(1.309f, aspect_ratio, 1.0f, 8192.0f);
-    const Matrix4 mvp = multiply(projection, view);
     for (uint32_t index = 0; index < bundle->draw_count; ++index) {
         const BspBundleDraw *const source = &bundle->draws[index];
         if (source->first_index > bundle->index_count ||
             source->index_count > bundle->index_count - source->first_index)
             return -3;
-        for (unsigned word = 0; word < 16u; ++word)
-            out[index].sh_words[word] = bits(mvp.v[word]);
         float color[4];
         face_color(source->face_id, color);
         for (unsigned word = 0; word < 4u; ++word)
@@ -156,5 +149,26 @@ int bsp_flat_build_scene(BspFlatDraw *out, uint32_t capacity,
         out[index].index_count = source->index_count;
         out[index].indices = bundle->indices + source->first_index;
     }
+    return bsp_flat_update_camera(out, bundle->draw_count,
+                                  bundle->camera_position,
+                                  bundle->camera_forward, aspect_ratio);
+}
+
+int bsp_flat_update_camera(BspFlatDraw *draws, uint32_t draw_count,
+                           const float position[3], const float forward[3],
+                           float aspect_ratio)
+{
+    if (!draws || draw_count == 0u || !position || !forward ||
+        !(aspect_ratio > 0.0f) || !__builtin_isfinite(aspect_ratio))
+        return -1;
+    Matrix4 view;
+    if (view_matrix(position, forward, &view) != 0)
+        return -2;
+    const Matrix4 projection = perspective(1.309f, aspect_ratio, 1.0f,
+                                           8192.0f);
+    const Matrix4 mvp = multiply(projection, view);
+    for (uint32_t draw = 0; draw < draw_count; ++draw)
+        for (unsigned word = 0; word < 16u; ++word)
+            draws[draw].sh_words[word] = bits(mvp.v[word]);
     return 0;
 }

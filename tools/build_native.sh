@@ -31,8 +31,16 @@ make -C "$root" shaders AMDLLPC="$amdllpc" LLVM_READELF="$readelf"
 make -C "$foundation" deps libc >/dev/null
 
 bsp_bundle=${BSP_BUNDLE:-}
+bsp_noclip=${BSP_NOCLIP:-0}
 dev_conf=${PS5LOG_DEV_CONF:-$root/dev.conf}
 bsp_flags=()
+[[ $bsp_noclip == 0 || $bsp_noclip == 1 ]] || {
+    echo "BSP_NOCLIP must be 0 or 1" >&2; exit 2;
+}
+if [[ $bsp_noclip == 1 && -z $bsp_bundle ]]; then
+    echo "BSP_NOCLIP requires BSP_BUNDLE" >&2
+    exit 2
+fi
 if [[ -n $bsp_bundle ]]; then
     bsp_bundle=$(realpath -- "$bsp_bundle")
     [[ -f $bsp_bundle ]] || {
@@ -47,6 +55,9 @@ if [[ -n $bsp_bundle ]]; then
         --bundle "$bsp_bundle" \
         --output "$root/build/generated/bsp_build_metadata.h"
     bsp_flags=(-DPS5_BSP_VIEWER=1)
+    if [[ $bsp_noclip == 1 ]]; then
+        bsp_flags+=(-DPS5_BSP_NOCLIP=1)
+    fi
 fi
 
 sdk="$foundation/.deps/native/ps5-payload-sdk"
@@ -85,6 +96,7 @@ common=(-O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
 sources=(
     native/main.c native/ps5_agc_native.c
     src/bsp_bundle.c src/bsp_command_plan.c src/bsp_flat_draw.c
+    src/bsp_noclip.c
     src/bsp_flat_scene.c src/bsp_runtime_plan.c
     src/gears_animation.c src/gears_draw_compose.c src/gears_frame_runner.c
     src/gears_frame_tracker.c src/gears_mesh.c src/gears_renderer.c
