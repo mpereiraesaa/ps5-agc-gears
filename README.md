@@ -1,164 +1,105 @@
 # PS5 AGC Gears
 
-Clean-room, source-reproducible, hardware-accelerated graphics demo for native
-PlayStation 5 homebrew. It renders a continuous three-gear scene through AGC
-using independently authored `gfx1013` shaders.
+**AGC Gears is a clean-room, hardware-accelerated graphics demo for native
+PlayStation 5 homebrew.** It drives the **PS5 GPU** through AGC, the console's
+low-level graphics interface, using independently authored `gfx1013` shaders.
 
-> **Development status:** this repository builds a complete native title
-> from independently authored source plus a pinned public foundation. The exact
-> standalone artifact has rendered on FW 12.02 and passed short strict,
-> 10,000-frame and 60,000-frame hardware soaks. Host CI, deterministic release
-> packaging and a fail-closed publication audit are included.
+<p align="center">
+  <img src="assets/screenshots/ps5-agc-gears-hardware.jpg"
+       width="680"
+       alt="Three hardware-accelerated gears rendered by AGC Gears on a PlayStation 5">
+</p>
 
-## Demonstrated milestone
+<p align="center"><em>AGC Gears running on real PS5 hardware (FW 12.02).</em></p>
 
-On a PS5 running firmware 12.02, an artifact built entirely by this standalone
-repository rendered the animated three-gear scene for 10,000 frames:
+The project follows the tradition of Mesa's
+[`glxgears`](https://gitlab.freedesktop.org/mesa/demos/-/blob/main/src/xdemos/glxgears.c)
+and
+[`es2gears`](https://gitlab.freedesktop.org/mesa/demos/-/blob/main/src/egl/opengles2/es2gears.c):
+the familiar rotating gears used for decades as a quick visual sanity check that
+a Linux/OpenGL graphics path is alive. Like those demos, AGC Gears is **not a
+GPU benchmark**. Here the same recognizable scene makes native PS5 GPU progress
+visible and reproducible.
 
-| Property | Confirmed result |
+## What works
+
+| Capability | Hardware result |
 | --- | --- |
-| GPU target | `gfx1013` |
-| Pipeline | 84 CX / 12 SH / 3 UC register pairs |
+| GPU and shaders | AGC pipeline with independently authored `gfx1013` shaders |
+| Scene | Three lit, animated 3D gears derived from Mesa's MIT-licensed geometry |
+| Rendering | Depth-tested geometry plus a shader-based render-target clear |
 | Scheduling | Two frames genuinely in flight |
-| Draws | Fullscreen RT clear plus three gears per frame |
-| Color clear | Pipeline draw; color DMA compiled out |
-| Completion | Submit success, GPU fence zero, exact VideoOut event |
-| Soak | 10,000/10,000, zero errors, 59.9407 fps |
-| Lifecycle | Color/depth guards intact and complete teardown |
+| Completion | GPU fence and exact VideoOut flip-event ownership |
+| Runtime | Continuous until the user selects **Close Game** |
+| Observability | Structured TCP telemetry, heartbeats and immutable run manifests |
 
-This is evidence for one tested console and firmware, not a universal
-compatibility claim.
+The strongest finite reference is an uninterrupted 60,000-frame run on one
+PS5 with firmware 12.02. It completed with zero renderer errors and a clean
+teardown. Continuous-mode hardware runs reached 25,560 completed frames before
+operator closure. The finite reference predates the current continuous runtime,
+and the exact current commit still requires hardware revalidation. See
+[`docs/HARDWARE_VALIDATION.md`](docs/HARDWARE_VALIDATION.md) for the precise
+evidence boundary.
 
-The strict finite reference is the uninterrupted 60,000-frame run
-`20260905T144120445Z_PPSA99997_ps5-agc-gears_0x15c32a4befaa`: its opening
-identity, ownership markers, zero renderer errors and gap-free teardown all
-passed the documented `ps5log/1` contract. It predates the continuous runtime.
-The immediately preceding continuous build has separate hardware evidence up
-to 25,560 completed frames with healthy heartbeats and operator closure. The
-exact current commit is host/native-build validated and awaits its hardware
-revalidation; see `docs/HARDWARE_VALIDATION.md`.
+## Build and test
 
-## Intended contents
-
-- Minimal native application derived from the public PS5 native app boilerplate.
-- Independently authored GLSL pipeline compiled for `gfx1013` with public tools.
-- Small AGC renderer covering initialization, buffers, pipeline, draw, flip,
-  synchronization and teardown.
-- Deterministic non-indexed gear meshes with interleaved position/normal
-  vertices, avoiding an indexed-draw dependency in the first release.
-- A fullscreen-triangle render-target clear, avoiding color-buffer DMA in the
-  current animated path.
-- Pure backend contracts for two display surfaces, SetFlip/fence composition
-  and exact GPU/VideoOut completion ownership.
-- Host tests for command composition and shader metadata translation.
-- Structured TCP run logs, immutable manifests and fail-closed cleanup.
-- Reproducible build, artifact inspection and release hashes.
-- Documentation for deployment through a compatible homebrew loader.
-
-The public capability path is intentionally incremental:
-
-```text
-Triangle -> Plasma -> Cube -> Gears
-```
-
-## Non-goals
-
-- No proprietary Sony SDK files, runtime modules or headers.
-- No game dumps, shaders, command buffers or reverse-engineered assets.
-- No jailbreak, kernel exploit or payload delivery implementation.
-- No promise of compatibility beyond firmware actually tested.
-
-## Host quick start
-
-The current host validation workflow is:
+Run all host contracts and the fail-closed publication audit:
 
 ```sh
 make test
 make audit
 ```
 
-## Continuous runtime
-
-`make native` and its alias `make native-release` build the same production
-loop. It has no frame limit, chunk boundary or automatic exit and remains open
-until the user selects **Close Game**. Soak duration is a supervisor policy over
-the same binary and its telemetry; it never changes renderer code or compile
-definitions. See `docs/RELEASING.md` for lifecycle and packaging details.
-
-Compile the independently authored pipeline with a public LLPC build that
-contains GFX1013 support:
+Compile the public shader source with an LLPC build that supports GFX1013:
 
 ```sh
 make shaders AMDLLPC=/path/to/amdllpc LLVM_READELF=/path/to/llvm-readelf
 ```
 
-The command always passes `-gfxip=10.1.3`, rejects relocation sections,
-extracts GS/PS code by PAL symbol extent and writes a SHA-256 manifest under
-`build/shaders/`. It then derives `build/generated/gears_shader_metadata.h`
-directly from the PAL notes. Generated ELF, ISA and headers are disposable
-artifacts and are not part of the publication allowlist.
-
-Observability is part of the renderer contract: every hardware run must carry
-a fresh application boot token, artifact hash, ordered GPU/VideoOut completion
-markers and an archived manifest. Silence and submit return values alone never
-authorize resource reuse or process cleanup.
-
-The complete runtime telemetry contract is documented in
-`docs/TELEMETRY.md`. Local network configuration belongs only in ignored
-`dev.conf`, created from `dev.conf.example` during development.
-
-Build a complete ignored title directory under `dist/PPSA99997/` with:
+Build the ignored native title directory:
 
 ```sh
 PS5LOG_DEV_CONF=/absolute/private/dev.conf make native \
   AMDLLPC=/path/to/amdllpc LLVM_READELF=/path/to/llvm-readelf
 ```
 
-The builder verifies the pinned native-foundation revision, compiles only for
-`gfx1013`, generates shader metadata, links/signs the native executable and
-packages the title. An `eboot.bin` alone is not a deployable title. Deployment
-remains loader-specific and is deliberately outside this repository.
+The build pins and verifies its public native foundation, always targets
+`-gfxip=10.1.3`, derives shader metadata from PAL notes, links/signs the native
+executable and packages `dist/PPSA99997/`. Generated binaries, local telemetry
+configuration and deployment material are excluded from publication. Deployment
+remains loader-specific.
 
-See `docs/BACKEND_PROVENANCE.md` for the clean-room boundary and
-`docs/HARDWARE_VALIDATION.md` for exact hardware evidence and limitations.
-Future renderer work is isolated with Git worktrees instead of copied numbered
-stages; see `docs/DEVELOPMENT.md`.
+## Design and scope
 
-## Safety and publication status
+The implementation covers native initialization, direct memory, color/depth
+surfaces, shader metadata, command composition, submission, synchronization,
+VideoOut presentation and teardown. Its capability path was deliberately small:
 
-Run the publication audit before creating a commit or archive:
-
-```sh
-python3 tools/audit_publication.py
+```text
+Triangle -> Plasma -> Cube -> Gears
 ```
 
-The audit uses `PUBLICATION_ALLOWLIST.txt` and rejects unexpected files,
-symlinks, unapproved binaries, private-laboratory terms, absolute workstation
-paths and hard-coded local network addresses. Generated `.deps`, `build`,
-`dist` and `release` trees are omitted only when Git confirms they are ignored. The two
-original project icons are accepted only by their pinned SHA-256 digests.
+This repository contains no proprietary Sony SDK files, game material, dumps,
+shaders or command buffers, and no jailbreak or payload-delivery implementation.
+Hardware results apply only to the console and firmware actually tested.
 
-## Application identity
+Useful references:
 
-The local development identity is `PPSA99997`, concept `99997`, with the title
-**AGC Gears**. It is a project-local development identifier, not an official
-Sony assignment; it must be reviewed before public distribution.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — renderer structure
+- [`docs/BACKEND_PROVENANCE.md`](docs/BACKEND_PROVENANCE.md) — clean-room boundary
+- [`docs/HARDWARE_VALIDATION.md`](docs/HARDWARE_VALIDATION.md) — hardware evidence
+- [`docs/TELEMETRY.md`](docs/TELEMETRY.md) — runtime observability contract
+- [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — development workflow
+- [`docs/RELEASING.md`](docs/RELEASING.md) — reproducible releases
 
-## Credits
+## Credits and license
 
-The native application packaging and repository quality target are inspired by
-[BlackBearReloaded's PS5 Native App Boilerplate](https://github.com/blackbearreloaded/ps5-native-app-boilerplate),
-whose author is a pioneer of practical native PS5 homebrew. AGC presentation
-research in ProsperoTV also informed the public API lifecycle. All demo shaders
-and runtime integration intended for this repository will remain independently
-authored and source-reproducible.
+The native shell derives from
+[BlackBearReloaded's PS5 Native App Boilerplate](https://github.com/blackbearreloaded/ps5-native-app-boilerplate).
+The gear geometry adapts Mesa's MIT-licensed `es2gears`; exact provenance and
+attribution are recorded in [`NOTICE.md`](NOTICE.md). All shaders and AGC
+integration in this repository are independently authored and source
+reproducible.
 
-## License
-
-GPL-3.0-or-later. This is compatible with the boilerplate from which the native
-application shell is derived. Dependency licenses and required notices
-remain subject to the release audit.
-
-The public repository is
-[`mpereiraesaa/ps5-agc-gears`](https://github.com/mpereiraesaa/ps5-agc-gears).
-Its `main` branch accepts changes only through pull requests.
+Licensed GPL-3.0-or-later. The application identity `PPSA99997` is a local
+development identifier, not an official Sony assignment.
