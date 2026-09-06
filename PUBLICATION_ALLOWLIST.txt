@@ -39,6 +39,7 @@ shaders/bsp_flat.pipe
 shaders/bsp_textured.pipe
 shaders/bsp_resource.pipe
 shaders/bsp_alpha_test.pipe
+shaders/bsp_sky.pipe
 shaders/bsp_overlay.pipe
 shaders/pipeline_permutations.json
 src/bsp_bundle.c
@@ -49,6 +50,8 @@ src/bsp_dynamic_lightmap.c
 src/bsp_dynamic_lightmap.h
 src/bsp_alpha_test.c
 src/bsp_alpha_test.h
+src/bsp_sky.c
+src/bsp_sky.h
 src/bsp_flat_draw.c
 src/bsp_flat_draw.h
 src/bsp_flat_scene.c
@@ -153,6 +156,7 @@ tests/test_bsp_bundle.c
 tests/test_bsp_command_plan.c
 tests/test_bsp_dynamic_lightmap.c
 tests/test_bsp_alpha_test.c
+tests/test_bsp_sky.c
 tests/test_bsp_flat_draw.c
 tests/test_bsp_flat_scene.c
 tests/test_bsp_noclip.c
@@ -180,6 +184,7 @@ tests/test_validate_bsp_resource_evidence.py
 tests/test_validate_texture_path_lightmap_evidence.py
 tests/test_validate_texture_path_mip_evidence.py
 tests/test_validate_texture_path_alpha_evidence.py
+tests/test_validate_texture_path_sky_evidence.py
 tools/audit_publication.py
 tools/build_shader.py
 tools/generate_agc_metadata.py
@@ -195,6 +200,7 @@ tools/validate_bsp_resource_evidence.py
 tools/validate_texture_path_lightmap_evidence.py
 tools/validate_texture_path_mip_evidence.py
 tools/validate_texture_path_alpha_evidence.py
+tools/validate_texture_path_sky_evidence.py
 docs/BSP_VIEWER_PHASE1.md
 docs/BSP_RESOURCE_FOUNDATION_PHASE2.md
 docs/BSP_TEXTURE_PATH_PHASE3.md

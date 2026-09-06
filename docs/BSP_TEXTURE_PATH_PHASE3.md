@@ -163,13 +163,62 @@ already-open registered Chiaki session; Chiaki was neither launched nor paired.
 The exact title was then closed and all four console services passed two stable
 health checks.
 
+## Gate 4: separate sky pass
+
+The fourth gate is complete on FW 12.02. The baker marks texture name `sky`
+with an explicit bundle flag. Sky faces remain in the validated draw table but
+are excluded from bounded dynamic-lightmap selection. A platform-neutral plan
+partitions the runtime draws into opaque, alpha-tested and sky classes and
+selects a deterministic nearest-centroid camera standoff without embedding
+private map coordinates in source.
+
+The dedicated `bsp_sky` pipeline samples only the base texture: it is unlit,
+blend-disabled and depth-writing. It is compiled separately from
+`bsp_resource`; their pixel-shader payload sizes are 204 and 260 bytes. The
+native command stream draws opaque and alpha-tested classes first, then switches
+to the sky pipeline before the overlay. Frame 9,998 deliberately omits the sky
+class while frame 9,999 restores it. Both use the same anisotropic sampler and
+paired dynamic-lightmap pattern, so the distinct GPU framebuffer readbacks
+isolate the sky pass.
+
+Acceptance requires:
+
+- exactly one sky texture, 158 sky draws and four compiled runtime pipelines;
+- skip-control/sky-pass draw counts of 0/158 at frames 9,998/9,999;
+- distinct paired GPU framebuffer readbacks with stable lightmap slots;
+- exact fence plus VideoOut-token retirement, intact guards, 10,000 completed
+  and connected frames, zero errors and six reclaimed allocations;
+- a gap-free `bsp-texture-path-sky-soak-complete` BYE.
+
+`validate_texture_path_sky_evidence.py` accepted run
+`20260906T165427904Z_PPSA99997_ps5-agc-gears_0x6b9b27deac05`: 10,000 frames,
+224 structured records and skip-control/sky-pass framebuffer hashes
+`8c9d51a9222a6ce4` / `67cfb3455c938c2e`. The transcript and manifest SHA-256
+values are
+`30ede3404d9588b3fbf4be74e9787739143255391eeee4b727f4157f7361136c`
+and
+`d96c761554bc35cb93006e1147b6b04784f392244062c50f4aff296c0814dc88`.
+The private bundle is 8,741,888 bytes with SHA-256
+`7536b8a28be3b815f93b35f035f9f957952e379722657194e1ab15172f9604e1`.
+The native ELF/fSELF SHA-256 values are
+`d3669c1d4b1be1c6dc14a55478ba951bf39364fae6bac96ea07db78e53dba670`
+and
+`037d34a8eb379b8b6f821ceb663427055d1e98fa77882176622ba356f49ab1f6`.
+
+The private Remote Play capture SHA-256 is
+`199a6b2c8d1d1c901934db52516989dec797f13e20d809fa79d14bb956033be3`.
+The already-proven input path was unchanged; the operator moved the existing
+camera so sky-visible geometry was on screen. Chiaki used its existing
+registered PS5 entry through the direct stream CLI helper, with no pairing or
+re-registration. The title was then closed by exact identity and all four
+console services remained healthy.
+
 ## Remaining ordered gates
 
-Gates 1–3 do not claim completion of Phase 3. The remaining order is:
+Gates 1–4 do not claim completion of Phase 3. The remaining order is:
 
-1. a separate sky pass;
-2. consolidated resident/upload telemetry and reproducible host/hardware gates;
-3. the final 60,000-frame structured soak and pull request.
+1. consolidated resident/upload telemetry and reproducible host/hardware gates;
+2. the final 60,000-frame structured soak and pull request.
 
 Entities, PVS, water, sprites/models, platform/audio and engine integration
 remain outside this phase.

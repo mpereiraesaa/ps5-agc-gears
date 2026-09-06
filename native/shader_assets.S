@@ -79,6 +79,22 @@ ps5_bsp_alpha_test_ps_start:
 .global ps5_bsp_alpha_test_ps_end
 ps5_bsp_alpha_test_ps_end:
 
+.section .rodata.ps5_bsp_sky_shaders,"a",@progbits
+
+.balign 256
+.global ps5_bsp_sky_gs_start
+ps5_bsp_sky_gs_start:
+.incbin "build/shaders/bsp_sky.gs.bin"
+.global ps5_bsp_sky_gs_end
+ps5_bsp_sky_gs_end:
+
+.balign 256
+.global ps5_bsp_sky_ps_start
+ps5_bsp_sky_ps_start:
+.incbin "build/shaders/bsp_sky.ps.bin"
+.global ps5_bsp_sky_ps_end
+ps5_bsp_sky_ps_end:
+
 .section .rodata.ps5_bsp_overlay_shaders,"a",@progbits
 
 .balign 256

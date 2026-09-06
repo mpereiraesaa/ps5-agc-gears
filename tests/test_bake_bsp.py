@@ -157,6 +157,15 @@ def main() -> int:
     assert external_texture[7] == (BAKER.TEXTURE_FLAG_TRANSPARENT |
                                     BAKER.TEXTURE_FLAG_FALLBACK)
 
+    sky = bytearray(source)
+    sky[texture_lump_offset + 8:texture_lump_offset + 24] = \
+        struct.pack("<16s", b"sky")
+    sky_bundle = BAKER.bake(bytes(sky))
+    sky_directory = chunks(sky_bundle)
+    sky_texture = BAKER.TEXTURE.unpack_from(
+        sky_bundle, sky_directory[b"TEXM"][0])
+    assert sky_texture[7] == BAKER.TEXTURE_FLAG_SKY
+
     nodraw = bytearray(source)
     nodraw[texture_lump_offset + 8:texture_lump_offset + 24] = \
         struct.pack("<16s", b"aaatrigger")

@@ -17,6 +17,13 @@
       "ps_application_words": 1
     },
     {
+      "id": "bsp_sky",
+      "pipe": "shaders/bsp_sky.pipe",
+      "purpose": "unlit GoldSrc sky portal surfaces",
+      "gs_application_words": 2,
+      "ps_application_words": 1
+    },
+    {
       "id": "bsp_overlay",
       "pipe": "shaders/bsp_overlay.pipe",
       "purpose": "transient debug overlay quad",

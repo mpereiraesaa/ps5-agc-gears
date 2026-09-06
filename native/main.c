@@ -16,6 +16,7 @@
 #include "../src/bsp_resource_frame.h"
 #include "../src/bsp_dynamic_lightmap.h"
 #include "../src/bsp_alpha_test.h"
+#include "../src/bsp_sky.h"
 #include "../src/ps5_agc_submit.h"
 #include "../src/ps5_cache_contract.h"
 #include "../src/ps5_color_target.h"
@@ -40,6 +41,7 @@
 #ifdef PS5_RESOURCE_FOUNDATION
 #include "bsp_resource_shader_metadata.h"
 #include "bsp_alpha_test_shader_metadata.h"
+#include "bsp_sky_shader_metadata.h"
 #include "bsp_overlay_shader_metadata.h"
 #include "pipeline_permutations.h"
 #endif
@@ -69,6 +71,8 @@ extern const uint8_t ps5_bsp_alpha_test_gs_start[];
 extern const uint8_t ps5_bsp_alpha_test_gs_end[];
 extern const uint8_t ps5_bsp_alpha_test_ps_start[];
 extern const uint8_t ps5_bsp_alpha_test_ps_end[];
+extern const uint8_t ps5_bsp_sky_gs_start[], ps5_bsp_sky_gs_end[];
+extern const uint8_t ps5_bsp_sky_ps_start[], ps5_bsp_sky_ps_end[];
 extern const uint8_t ps5_bsp_overlay_gs_start[], ps5_bsp_overlay_gs_end[];
 extern const uint8_t ps5_bsp_overlay_ps_start[], ps5_bsp_overlay_ps_end[];
 #endif
@@ -108,6 +112,13 @@ enum {
     ALPHA_LINKED_CX_OFFSET = 0xa000u,
     ALPHA_LINKED_UC_OFFSET = 0xa200u,
     ALPHA_PIPELINE_OFFSET = 0xb000u,
+    SKY_GS_HEADER_OFFSET = 0xc000u,
+    SKY_PS_HEADER_OFFSET = 0xc200u,
+    SKY_GS_CODE_OFFSET = 0xd000u,
+    SKY_PS_CODE_OFFSET = 0xd200u,
+    SKY_LINKED_CX_OFFSET = 0xe000u,
+    SKY_LINKED_UC_OFFSET = 0xe200u,
+    SKY_PIPELINE_OFFSET = 0xf000u,
     RESOURCE_TRANSIENT_BYTES = 0x40000u,
     RESOURCE_HEAP_ALIGNMENT = 0x10000u,
 #endif
@@ -200,7 +211,9 @@ struct native_renderer {
 #ifdef PS5_RESOURCE_FOUNDATION
     struct ps5_pipeline_registers *overlay_pipelines[2];
     struct ps5_pipeline_registers *alpha_test_pipelines[2];
+    struct ps5_pipeline_registers *sky_pipelines[2];
     BspAlphaTestPlan alpha_test_plan;
+    BspSkyPlan sky_plan;
     Ps5TransientRing transient_ring;
     BspResourceFrame resource_frames[2];
     Ps5CpuToGpuPlan cache_plans[2];
@@ -694,7 +707,8 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
             completed != 0u) != PS5_TRANSIENT_OK)
         return -8;
 #ifdef PS5_TEXTURE_PATH
-#if defined(PS5_TEXTURE_MIP_GATE) || defined(PS5_TEXTURE_ALPHA_GATE)
+#if defined(PS5_TEXTURE_MIP_GATE) || defined(PS5_TEXTURE_ALPHA_GATE) || \
+    defined(PS5_TEXTURE_SKY_GATE)
     if (bsp_dynamic_lightmap_update_pattern(
             &state->dynamic_lightmap_slots[resource_slot],
             &state->dynamic_lightmap_layout, &state->transient_ring,
@@ -982,6 +996,52 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
             resource_composed.alpha_test_draws,
             state->dynamic_lightmap_updates[resource_slot].pattern);
 #endif
+    const int sky_enabled =
+#ifdef PS5_TEXTURE_SKY_GATE
+        frame->frame_index != BSP_GATE_FRAME_COUNT - 2u;
+#else
+        1;
+#endif
+    struct ps5_pipeline_registers *sky =
+        state->sky_pipelines[frame->buffer];
+    if (result == 0 && sky_enabled)
+        result = ps5_native_set_indirect(
+            &cursor, (uint32_t)(end - cursor), sky->cx,
+            PS5_PIPELINE_CX_REGISTERS, state->resources->shader,
+            SHADER_BYTES, PS5_NATIVE_REGISTERS_CX);
+    if (result == 0 && sky_enabled)
+        result = ps5_native_set_indirect(
+            &cursor, (uint32_t)(end - cursor), sky->uc,
+            PS5_PIPELINE_UC_REGISTERS, state->resources->shader,
+            SHADER_BYTES, PS5_NATIVE_REGISTERS_UC);
+    if (result == 0 && sky_enabled)
+        result = ps5_native_set_indirect(
+            &cursor, (uint32_t)(end - cursor), sky->sh,
+            PS5_PIPELINE_SH_REGISTERS, state->resources->shader,
+            SHADER_BYTES, PS5_NATIVE_REGISTERS_SH);
+    if (result == 0 && sky_enabled)
+        result = bsp_resource_compose_map_pass(
+            &cursor, end, &state->resource_frames[resource_slot],
+            &state->bsp_bundle, state->clear_indices,
+            BSP_RESOURCE_DRAW_SKY, 0,
+            state->resources->resource_heap,
+            state->resources->resource_heap_bytes, state->draw_modifier,
+            ps5_native_set_sh_direct, ps5_native_draw_index,
+            &resource_composed);
+#ifdef PS5_TEXTURE_SKY_GATE
+    if (result == 0 &&
+        (frame->frame_index == 0u ||
+         frame->frame_index + 2u >= BSP_GATE_FRAME_COUNT))
+        (void)ps5log_printf(PS5LOG_MARK,
+            "SKY_PASS_FRAME frame=%llu slot=%u mode=%s "
+            "sky_draws=%u expected_sky_draws=%u sampler=anisotropic4x "
+            "lightmap_pattern=%u",
+            (unsigned long long)frame->frame_index, resource_slot,
+            sky_enabled ? "sky-pass" : "skip-control",
+            sky_enabled ? resource_composed.sky_draws : 0u,
+            state->sky_plan.draw_count,
+            state->dynamic_lightmap_updates[resource_slot].pattern);
+#endif
     struct ps5_pipeline_registers *overlay =
         state->overlay_pipelines[resource_slot];
     if (result == 0)
@@ -1012,11 +1072,18 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
             state->resources->resource_heap_bytes,
             state->overlay_draw_modifier, ps5_native_set_sh_direct,
             ps5_native_draw_index, &resource_composed);
+    const uint32_t expected_sky_draws =
+        sky_enabled ? state->sky_plan.draw_count : 0u;
+    const uint32_t expected_map_draws =
+        state->bsp_bundle.draw_count -
+        (sky_enabled ? 0u : state->sky_plan.draw_count);
     if (result != 0 ||
-        resource_composed.map_draws != state->bsp_bundle.draw_count ||
+        resource_composed.map_draws != expected_map_draws ||
+        resource_composed.sky_draws != expected_sky_draws ||
         resource_composed.opaque_draws +
-                resource_composed.alpha_test_draws !=
-            state->bsp_bundle.draw_count ||
+                resource_composed.alpha_test_draws +
+                resource_composed.sky_draws !=
+            expected_map_draws ||
         resource_composed.overlay_draws != 1u)
         return resource_compose_fail(state, resource_slot, -16);
 #elif defined(PS5_BSP_TEXTURED)
@@ -1389,7 +1456,9 @@ static uint64_t bright_pixel_count(const void *data, size_t bytes)
 static void park_complete(void)
 {
 #ifdef PS5_TEXTURE_PATH
-#ifdef PS5_TEXTURE_ALPHA_GATE
+#ifdef PS5_TEXTURE_SKY_GATE
+    ps5log_close("bsp-texture-path-sky-soak-complete");
+#elif defined(PS5_TEXTURE_ALPHA_GATE)
     ps5log_close("bsp-texture-path-alpha-soak-complete");
 #elif defined(PS5_TEXTURE_MIP_GATE)
     ps5log_close("bsp-texture-path-mip-soak-complete");
@@ -1451,7 +1520,15 @@ int main(void)
                         log_path ? log_path : "unavailable");
 #ifdef PS5_BSP_VIEWER
 #ifdef PS5_TEXTURE_PATH
-#ifdef PS5_TEXTURE_ALPHA_GATE
+#ifdef PS5_TEXTURE_SKY_GATE
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_TEXTURE_PATH_BOOT schema=1 slice=sky "
+        "target=gfx1013 fw=12.02 transient_slots=2 "
+        "ownership=fence+videoout bundle_sha256=%s bundle_bytes=%u "
+        "soak_frames=%u",
+        PS5_BSP_BUNDLE_SHA256, PS5_BSP_BUNDLE_BYTES,
+        BSP_GATE_FRAME_COUNT);
+#elif defined(PS5_TEXTURE_ALPHA_GATE)
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_TEXTURE_PATH_BOOT schema=1 slice=alpha-test "
         "target=gfx1013 fw=12.02 transient_slots=2 "
@@ -1479,7 +1556,7 @@ int main(void)
 #elif defined(PS5_RESOURCE_FOUNDATION)
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_RESOURCE_BOOT schema=1 target=gfx1013 fw=12.02 "
-        "constants=vsharp transient_slots=2 pipelines=3 overlay=quad "
+        "constants=vsharp transient_slots=2 pipelines=4 overlay=quad "
         "bundle_sha256=%s bundle_bytes=%u soak_frames=%u",
         PS5_BSP_BUNDLE_SHA256, PS5_BSP_BUNDLE_BYTES,
         BSP_GATE_FRAME_COUNT);
@@ -1804,6 +1881,78 @@ int main(void)
                 resources.surface.width, resources.surface.height) != 0)
             return fail_pre_submit("alpha_test_pipeline_build", -1);
     }
+    const struct ps5_shader_metadata sky_metadata = {
+        PS5_BSP_SKY_GS_RSRC1, PS5_BSP_SKY_GS_RSRC2,
+        PS5_BSP_SKY_PS_RSRC1, PS5_BSP_SKY_PS_RSRC2,
+        PS5_BSP_SKY_GE_CNTL, PS5_BSP_SKY_SHADER_STAGES_EN,
+        PS5_BSP_SKY_GS_OUT_PRIM_TYPE, PS5_BSP_SKY_DRAW_MODIFIER,
+        ps5_bsp_sky_pre_raster_cx,
+        sizeof(ps5_bsp_sky_pre_raster_cx) /
+            sizeof(ps5_bsp_sky_pre_raster_cx[0]),
+        ps5_bsp_sky_pixel_cx,
+        sizeof(ps5_bsp_sky_pixel_cx) /
+            sizeof(ps5_bsp_sky_pixel_cx[0])
+    };
+    struct ps5_shader_arena *sky_gs_arena =
+        (struct ps5_shader_arena *)(base + SKY_GS_HEADER_OFFSET);
+    struct ps5_shader_arena *sky_ps_arena =
+        (struct ps5_shader_arena *)(base + SKY_PS_HEADER_OFFSET);
+    uint8_t *sky_gs_code = base + SKY_GS_CODE_OFFSET;
+    uint8_t *sky_ps_code = base + SKY_PS_CODE_OFFSET;
+    const size_t sky_gs_isa =
+        (size_t)(ps5_bsp_sky_gs_end - ps5_bsp_sky_gs_start);
+    const size_t sky_ps_isa =
+        (size_t)(ps5_bsp_sky_ps_end - ps5_bsp_sky_ps_start);
+    const uint32_t sky_gs_size =
+        (uint32_t)sky_gs_isa + SHADER_FOOTER_BYTES;
+    const uint32_t sky_ps_size =
+        (uint32_t)sky_ps_isa + SHADER_FOOTER_BYTES;
+    if (sky_gs_isa != PS5_BSP_SKY_GS_ISA_BYTES ||
+        sky_ps_isa != PS5_BSP_SKY_PS_ISA_BYTES ||
+        sky_metadata.draw_modifier != metadata.draw_modifier ||
+        ps5_shader_header_build(sky_gs_arena, PS5_SHADER_PRE_RASTER,
+                                sky_gs_size, &sky_metadata) != 0 ||
+        ps5_shader_header_build(sky_ps_arena, PS5_SHADER_PIXEL,
+                                sky_ps_size, &sky_metadata) != 0)
+        return fail_pre_submit("sky_shader_header", -1);
+    memcpy(sky_gs_code, ps5_bsp_sky_gs_start, sky_gs_isa);
+    memcpy(sky_ps_code, ps5_bsp_sky_ps_start, sky_ps_isa);
+    memcpy(sky_gs_code + sky_gs_size - SHADER_FOOTER_BYTES,
+           "barefoot", 8u);
+    memcpy(sky_ps_code + sky_ps_size - SHADER_FOOTER_BYTES,
+           "barefoot", 8u);
+    void *sky_gs_object = 0;
+    void *sky_ps_object = 0;
+    result = sceAgcCreateShader(&sky_gs_object, sky_gs_arena, sky_gs_code);
+    if (result != 0 || sky_gs_object != sky_gs_arena)
+        return fail_pre_submit("create_sky_gs", result != 0 ? result : -1);
+    result = sceAgcCreateShader(&sky_ps_object, sky_ps_arena, sky_ps_code);
+    if (result != 0 || sky_ps_object != sky_ps_arena)
+        return fail_pre_submit("create_sky_ps", result != 0 ? result : -1);
+    struct ps5_agc_linked_cx *sky_linked_cx =
+        (struct ps5_agc_linked_cx *)(base + SKY_LINKED_CX_OFFSET);
+    struct ps5_agc_linked_uc *sky_linked_uc =
+        (struct ps5_agc_linked_uc *)(base + SKY_LINKED_UC_OFFSET);
+    result = sceAgcLinkShaders(sky_linked_cx, sky_linked_uc, 0,
+                               sky_gs_object, sky_ps_object, 4u);
+    if (result != 0)
+        return fail_pre_submit("link_sky_shaders", result);
+    struct ps5_pipeline_registers *sky_pipelines =
+        (struct ps5_pipeline_registers *)(base + SKY_PIPELINE_OFFSET);
+    for (unsigned slot = 0; slot < 2u; ++slot) {
+        ps5_agc_register color[PS5_COLOR_REGISTER_COUNT];
+        const uintptr_t address = (uintptr_t)resources.framebuffer +
+            resources.surface.buffer_offsets[slot];
+        if (ps5_color_build_target(color, defaults, address,
+                                   resources.surface.width,
+                                   resources.surface.height) != 0 ||
+            ps5_pipeline_build(
+                &sky_pipelines[slot], color, sky_linked_cx, sky_linked_uc,
+                sky_gs_arena->cx, sky_ps_arena->cx, sky_gs_arena->sh,
+                sky_ps_arena->sh, resources.surface.width,
+                resources.surface.height) != 0)
+            return fail_pre_submit("sky_pipeline_build", -1);
+    }
     const struct ps5_shader_metadata overlay_metadata = {
         PS5_BSP_OVERLAY_GS_RSRC1, PS5_BSP_OVERLAY_GS_RSRC2,
         PS5_BSP_OVERLAY_PS_RSRC1, PS5_BSP_OVERLAY_PS_RSRC2,
@@ -1905,6 +2054,15 @@ int main(void)
            renderer.alpha_test_plan.target_forward,
            sizeof(renderer.noclip.forward));
 #endif
+#ifdef PS5_TEXTURE_SKY_GATE
+    if (bsp_sky_plan(&renderer.bsp_bundle, renderer.noclip.position,
+                     &renderer.sky_plan) != 0)
+        return fail_pre_submit("sky_plan", -1);
+    memcpy(renderer.noclip.position, renderer.sky_plan.target_position,
+           sizeof(renderer.noclip.position));
+    memcpy(renderer.noclip.forward, renderer.sky_plan.target_forward,
+           sizeof(renderer.noclip.forward));
+#endif
 #ifdef PS5_BSP_TEXTURED
     const uint32_t bsp_draw_dwords =
         renderer.bsp_draw_count * BSP_TEXTURED_DWORDS_PER_DRAW;
@@ -1951,7 +2109,8 @@ int main(void)
         (unsigned long long)resources.resource_heap_bytes,
         (unsigned long long)renderer.transient_ring.slots[0].bytes);
 #endif
-#if defined(PS5_TEXTURE_MIP_GATE) || defined(PS5_TEXTURE_ALPHA_GATE)
+#if defined(PS5_TEXTURE_MIP_GATE) || defined(PS5_TEXTURE_ALPHA_GATE) || \
+    defined(PS5_TEXTURE_SKY_GATE)
     uint32_t minimum_mips = 15u;
     uint32_t maximum_mips = 0u;
     uint64_t mip_chain_bytes = 0u;
@@ -1990,6 +2149,7 @@ int main(void)
 #ifdef PS5_TEXTURE_ALPHA_GATE
     uint32_t opaque_draws = 0u;
     uint32_t alpha_test_draws = 0u;
+    uint32_t sky_draws = 0u;
     uint32_t opaque_db_shader_control = 0u;
     uint32_t alpha_db_shader_control = 0u;
     int opaque_db_found = 0;
@@ -2011,9 +2171,10 @@ int main(void)
             alpha_db_found = 1;
         }
     if (bsp_resource_draw_counts(&renderer.bsp_bundle, &opaque_draws,
-                                 &alpha_test_draws) != 0 ||
+                                 &alpha_test_draws, &sky_draws) != 0 ||
         alpha_test_draws != renderer.alpha_test_plan.draw_count ||
-        opaque_draws + alpha_test_draws != renderer.bsp_bundle.draw_count ||
+        opaque_draws + alpha_test_draws + sky_draws !=
+            renderer.bsp_bundle.draw_count ||
         !opaque_db_found || !alpha_db_found ||
         (opaque_db_shader_control & 0x40u) != 0u ||
         (alpha_db_shader_control & 0x40u) == 0u)
@@ -2029,6 +2190,32 @@ int main(void)
         renderer.alpha_test_plan.target_texture,
         renderer.alpha_test_plan.target_face,
         opaque_db_shader_control, alpha_db_shader_control);
+#endif
+#ifdef PS5_TEXTURE_SKY_GATE
+    uint32_t opaque_draws = 0u;
+    uint32_t alpha_test_draws = 0u;
+    uint32_t sky_draws = 0u;
+    const int sky_shader_distinct =
+        PS5_BSP_RESOURCE_PS_ISA_BYTES != PS5_BSP_SKY_PS_ISA_BYTES ||
+        memcmp(ps5_bsp_resource_ps_start, ps5_bsp_sky_ps_start,
+               PS5_BSP_RESOURCE_PS_ISA_BYTES) != 0;
+    if (bsp_resource_draw_counts(&renderer.bsp_bundle, &opaque_draws,
+                                 &alpha_test_draws, &sky_draws) != 0 ||
+        sky_draws != renderer.sky_plan.draw_count ||
+        opaque_draws + alpha_test_draws + sky_draws !=
+            renderer.bsp_bundle.draw_count || !sky_shader_distinct)
+        return fail_pre_submit("sky_draw_classification", -1);
+    (void)ps5log_printf(PS5LOG_MARK,
+        "SKY_PASS_READY textures=%u draws=%u opaque_draws=%u "
+        "alpha_draws=%u target_texture=%u target_face=%u "
+        "camera=nearest-centroid-standoff pipeline=bsp_sky "
+        "composition=base-unlit "
+        "depth_write=enabled blend=disabled opaque_ps_bytes=%u "
+        "sky_ps_bytes=%u shader_distinct=true",
+        renderer.sky_plan.texture_count, renderer.sky_plan.draw_count,
+        opaque_draws, alpha_test_draws, renderer.sky_plan.target_texture,
+        renderer.sky_plan.target_face, PS5_BSP_RESOURCE_PS_ISA_BYTES,
+        PS5_BSP_SKY_PS_ISA_BYTES);
 #endif
 #elif defined(PS5_BSP_TEXTURED)
     (void)ps5log_printf(PS5LOG_MARK,
@@ -2117,27 +2304,35 @@ int main(void)
     renderer.overlay_pipelines[1] = &overlay_pipelines[1];
     renderer.alpha_test_pipelines[0] = &alpha_test_pipelines[0];
     renderer.alpha_test_pipelines[1] = &alpha_test_pipelines[1];
+    renderer.sky_pipelines[0] = &sky_pipelines[0];
+    renderer.sky_pipelines[1] = &sky_pipelines[1];
     renderer.overlay_draw_modifier = overlay_metadata.draw_modifier;
     renderer.overlay_depth_disabled = overlay_depth_disabled;
-    if (PS5_PIPELINE_PERMUTATION_COUNT != 3 ||
+    if (PS5_PIPELINE_PERMUTATION_COUNT != 4 ||
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_RESOURCE]
                 .gs_application_words != 2u ||
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_ALPHA_TEST]
+                .gs_application_words != 2u ||
+        ps5_pipeline_permutations[PS5_PIPELINE_BSP_SKY]
                 .gs_application_words != 2u ||
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_OVERLAY]
                 .gs_application_words != 1u)
         return fail_pre_submit("pipeline_permutation_table", -1);
     (void)ps5log_printf(PS5LOG_MARK,
-        "RESOURCE_PIPELINES_READY count=%u map=%s alpha_test=%s overlay=%s "
-        "map_gs_words=%u alpha_gs_words=%u overlay_gs_words=%u "
+        "RESOURCE_PIPELINES_READY count=%u map=%s alpha_test=%s sky=%s "
+        "overlay=%s map_gs_words=%u alpha_gs_words=%u sky_gs_words=%u "
+        "overlay_gs_words=%u "
         "overlay_depth=disabled",
         PS5_PIPELINE_PERMUTATION_COUNT,
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_RESOURCE].name,
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_ALPHA_TEST].name,
+        ps5_pipeline_permutations[PS5_PIPELINE_BSP_SKY].name,
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_OVERLAY].name,
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_RESOURCE]
             .gs_application_words,
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_ALPHA_TEST]
+            .gs_application_words,
+        ps5_pipeline_permutations[PS5_PIPELINE_BSP_SKY]
             .gs_application_words,
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_OVERLAY]
             .gs_application_words);
@@ -2170,7 +2365,14 @@ int main(void)
     input.user = &renderer;
 #ifdef PS5_BSP_VIEWER
 #ifdef PS5_TEXTURE_PATH
-#ifdef PS5_TEXTURE_ALPHA_GATE
+#ifdef PS5_TEXTURE_SKY_GATE
+    (void)ps5log_line(PS5LOG_MARK,
+        "BSP_LOOP_BEGIN mode=texture-path-sky-soak buffers=2 "
+        "color_dma=false depth_dma=true indexed=true frames=10000 "
+        "opaque_pass=separate alpha_test_pass=separate sky_pass=separate "
+        "sampler=anisotropic4x lightmap_pattern=paired "
+        "descriptors=per-frame overlay=fixed retirement=fence+videoout");
+#elif defined(PS5_TEXTURE_ALPHA_GATE)
     (void)ps5log_line(PS5LOG_MARK,
         "BSP_LOOP_BEGIN mode=texture-path-alpha-soak buffers=2 "
         "color_dma=false depth_dma=true indexed=true frames=10000 "
@@ -2332,7 +2534,8 @@ int main(void)
             renderer.dynamic_lightmap_slots[1].pixels,
             &renderer.dynamic_lightmap_layout) ==
             renderer.dynamic_lightmap_slots[1].surrounding_hash &&
-#if defined(PS5_TEXTURE_MIP_GATE) || defined(PS5_TEXTURE_ALPHA_GATE)
+#if defined(PS5_TEXTURE_MIP_GATE) || defined(PS5_TEXTURE_ALPHA_GATE) || \
+    defined(PS5_TEXTURE_SKY_GATE)
         renderer.dynamic_lightmap_slots[0].last_pattern == 1u &&
         renderer.dynamic_lightmap_slots[1].last_pattern == 1u &&
         bsp_dynamic_lightmap_patch_hash(
@@ -2351,7 +2554,8 @@ int main(void)
             BSP_GATE_FRAME_COUNT - 1u;
     if (!dynamic_lightmap_valid)
         park("dynamic-lightmap-readback-or-guard-gate-failure");
-#if defined(PS5_TEXTURE_MIP_GATE) || defined(PS5_TEXTURE_ALPHA_GATE)
+#if defined(PS5_TEXTURE_MIP_GATE) || defined(PS5_TEXTURE_ALPHA_GATE) || \
+    defined(PS5_TEXTURE_SKY_GATE)
     (void)ps5log_printf(PS5LOG_MARK,
         "DYNAMIC_LIGHTMAP_READBACK slot0=%016llx slot1=%016llx "
         "final_pattern=1 slots_equal=true surrounding=stable "
@@ -2376,6 +2580,17 @@ int main(void)
             &renderer.dynamic_lightmap_layout),
         (unsigned long long)first_hash,
         (unsigned long long)second_hash,
+        (unsigned long long)run.frames_completed);
+#endif
+#ifdef PS5_TEXTURE_SKY_GATE
+    (void)ps5log_printf(PS5LOG_MARK,
+        "SKY_PASS_READBACK skip_control_buffer=%016llx "
+        "sky_pass_buffer=%016llx bytes=%llu sampler=anisotropic4x "
+        "lightmap_pattern=1 paired=true framebuffer_distinct=true "
+        "guards=intact frames=%llu",
+        (unsigned long long)first_hash,
+        (unsigned long long)second_hash,
+        (unsigned long long)readback_bytes,
         (unsigned long long)run.frames_completed);
 #endif
 #ifdef PS5_TEXTURE_MIP_GATE
@@ -2425,7 +2640,8 @@ int main(void)
         "BSP_TEXTURE_PATH_LIGHTMAP_COMPLETE frames=%llu "
         "resident_bytes=%llu uploaded_bytes=%llu "
         "patch=%u,%u+%ux%u hit_face=%u "
-#if defined(PS5_TEXTURE_MIP_GATE) || defined(PS5_TEXTURE_ALPHA_GATE)
+#if defined(PS5_TEXTURE_MIP_GATE) || defined(PS5_TEXTURE_ALPHA_GATE) || \
+    defined(PS5_TEXTURE_SKY_GATE)
         "patterns=paired "
 #else
         "patterns=alternating "
@@ -2451,6 +2667,16 @@ int main(void)
         renderer.bsp_bundle.texture_count,
         (unsigned long long)run.telemetry.errors);
 #endif
+#ifdef PS5_TEXTURE_SKY_GATE
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_TEXTURE_PATH_SKY_COMPLETE frames=%llu textures=%u draws=%u "
+        "pipeline=separate skip_control=gpu-visible "
+        "sky_pass=gpu-visible paired_lightmap=true tokens=exact "
+        "guards=intact errors=%llu",
+        (unsigned long long)run.frames_completed,
+        renderer.sky_plan.texture_count, renderer.sky_plan.draw_count,
+        (unsigned long long)run.telemetry.errors);
+#endif
 #ifdef PS5_TEXTURE_ALPHA_GATE
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_TEXTURE_PATH_ALPHA_COMPLETE frames=%llu textures=%u draws=%u "
@@ -2466,7 +2692,7 @@ int main(void)
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_RESOURCE_SOAK_COMPLETE frames=%llu connected_frames=%llu "
         "read_errors=%llu textures=%u descriptor_dwords=%u "
-        "constants=per-frame overlay=transient pipelines=3 "
+        "constants=per-frame overlay=transient pipelines=4 "
         "tokens=exact guards=intact errors=%llu",
         (unsigned long long)run.frames_completed,
         (unsigned long long)renderer.noclip.connected_frames,

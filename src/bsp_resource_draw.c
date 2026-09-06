@@ -27,32 +27,42 @@ static int draw_selected(const BspBundleView *bundle,
                          const BspBundleDraw *draw,
                          enum bsp_resource_draw_class draw_class)
 {
-    const int alpha = (bundle->textures[draw->base_texture].flags &
-                       BSP_BUNDLE_TEXTURE_TRANSPARENT) != 0u;
-    return draw_class == BSP_RESOURCE_DRAW_ALL ||
-           (draw_class == BSP_RESOURCE_DRAW_ALPHA_TEST) == alpha;
+    const uint32_t flags = bundle->textures[draw->base_texture].flags;
+    const int alpha = (flags & BSP_BUNDLE_TEXTURE_TRANSPARENT) != 0u;
+    const int sky = (flags & BSP_BUNDLE_TEXTURE_SKY) != 0u;
+    if (draw_class == BSP_RESOURCE_DRAW_ALL)
+        return 1;
+    if (draw_class == BSP_RESOURCE_DRAW_SKY)
+        return sky;
+    if (draw_class == BSP_RESOURCE_DRAW_ALPHA_TEST)
+        return alpha && !sky;
+    return !alpha && !sky;
 }
 
 int bsp_resource_draw_counts(const BspBundleView *bundle,
                              uint32_t *opaque_draws,
-                             uint32_t *alpha_test_draws)
+                             uint32_t *alpha_test_draws,
+                             uint32_t *sky_draws)
 {
-    if (!bundle || !opaque_draws || !alpha_test_draws || !bundle->draws ||
-        !bundle->textures || bundle->draw_count == 0u ||
+    if (!bundle || !opaque_draws || !alpha_test_draws || !sky_draws ||
+        !bundle->draws || !bundle->textures || bundle->draw_count == 0u ||
         bundle->texture_count == 0u)
         return -1;
-    *opaque_draws = *alpha_test_draws = 0u;
+    *opaque_draws = *alpha_test_draws = *sky_draws = 0u;
     for (uint32_t index = 0u; index < bundle->draw_count; ++index) {
         const BspBundleDraw *const draw = &bundle->draws[index];
         if (draw->base_texture >= bundle->texture_count)
             return -2;
-        if ((bundle->textures[draw->base_texture].flags &
-             BSP_BUNDLE_TEXTURE_TRANSPARENT) != 0u)
+        const uint32_t flags = bundle->textures[draw->base_texture].flags;
+        if ((flags & BSP_BUNDLE_TEXTURE_SKY) != 0u)
+            ++*sky_draws;
+        else if ((flags & BSP_BUNDLE_TEXTURE_TRANSPARENT) != 0u)
             ++*alpha_test_draws;
         else
             ++*opaque_draws;
     }
-    return *opaque_draws + *alpha_test_draws == bundle->draw_count ? 0 : -3;
+    return *opaque_draws + *alpha_test_draws + *sky_draws ==
+           bundle->draw_count ? 0 : -3;
 }
 
 int bsp_resource_compose_map_pass(
@@ -149,8 +159,10 @@ int bsp_resource_compose_map_pass(
                          gpu_mapping, gpu_mapping_bytes, modifier) != 0)
             return -5;
         ++result->map_draws;
-        if ((bundle->textures[source->base_texture].flags &
-             BSP_BUNDLE_TEXTURE_TRANSPARENT) != 0u)
+        const uint32_t flags = bundle->textures[source->base_texture].flags;
+        if ((flags & BSP_BUNDLE_TEXTURE_SKY) != 0u)
+            ++result->sky_draws;
+        else if ((flags & BSP_BUNDLE_TEXTURE_TRANSPARENT) != 0u)
             ++result->alpha_test_draws;
         else
             ++result->opaque_draws;

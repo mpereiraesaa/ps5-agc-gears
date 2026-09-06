@@ -241,7 +241,11 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
                 texture->format != BSP_BUNDLE_IMAGE_RGBA8_UNORM ||
                 (texture->flags & ~(BSP_BUNDLE_TEXTURE_TRANSPARENT |
                                     BSP_BUNDLE_TEXTURE_FALLBACK |
-                                    BSP_BUNDLE_TEXTURE_NODRAW)) != 0u ||
+                                    BSP_BUNDLE_TEXTURE_NODRAW |
+                                    BSP_BUNDLE_TEXTURE_SKY)) != 0u ||
+                ((texture->flags & BSP_BUNDLE_TEXTURE_SKY) != 0u &&
+                 (texture->flags & (BSP_BUNDLE_TEXTURE_TRANSPARENT |
+                                    BSP_BUNDLE_TEXTURE_NODRAW)) != 0u) ||
                 texture->name_hash == 0u ||
                 (texture->offset & 255u) != 0u ||
                 texture->offset > texture_pixels_chunk->bytes ||

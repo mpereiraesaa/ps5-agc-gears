@@ -134,7 +134,8 @@ int bsp_dynamic_lightmap_select(const BspBundleView *bundle,
         if (draw->lightmap == UINT32_MAX ||
             draw->base_texture >= bundle->texture_count ||
             (bundle->textures[draw->base_texture].flags &
-             (BSP_BUNDLE_TEXTURE_TRANSPARENT | BSP_BUNDLE_TEXTURE_NODRAW)) !=
+             (BSP_BUNDLE_TEXTURE_TRANSPARENT | BSP_BUNDLE_TEXTURE_NODRAW |
+              BSP_BUNDLE_TEXTURE_SKY)) !=
                 0u ||
             draw->first_index > bundle->index_count ||
             draw->index_count > bundle->index_count - draw->first_index ||

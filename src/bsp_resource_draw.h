@@ -13,20 +13,23 @@ enum {
 enum bsp_resource_draw_class {
     BSP_RESOURCE_DRAW_OPAQUE = 0,
     BSP_RESOURCE_DRAW_ALPHA_TEST = 1,
-    BSP_RESOURCE_DRAW_ALL = 2,
+    BSP_RESOURCE_DRAW_SKY = 2,
+    BSP_RESOURCE_DRAW_ALL = 3,
 };
 
 typedef struct BspResourceComposeResult {
     uint32_t map_draws;
     uint32_t opaque_draws;
     uint32_t alpha_test_draws;
+    uint32_t sky_draws;
     uint32_t overlay_draws;
     uint32_t command_dwords;
 } BspResourceComposeResult;
 
 int bsp_resource_draw_counts(const BspBundleView *bundle,
                              uint32_t *opaque_draws,
-                             uint32_t *alpha_test_draws);
+                             uint32_t *alpha_test_draws,
+                             uint32_t *sky_draws);
 
 int bsp_resource_compose_map_pass(
     uint32_t **cursor, uint32_t *end, const BspResourceFrame *frame,

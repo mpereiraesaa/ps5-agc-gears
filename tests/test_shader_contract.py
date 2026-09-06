@@ -94,6 +94,15 @@ def main() -> int:
     ):
         if value not in alpha_test:
             raise SystemExit(f"BSP alpha-test shader contract is missing: {value}")
+    sky = (ROOT / "shaders/bsp_sky.pipe").read_text(encoding="utf-8")
+    for value in resource_required + (
+        "vec4 sky = texture(base_texture, base_uv);",
+        "color = vec4(sky.rgb, 1.0);",
+    ):
+        if value not in sky:
+            raise SystemExit(f"BSP sky shader contract is missing: {value}")
+    if "discard;" in sky or "base.rgb * texture(lightmap_texture" in sky:
+        raise SystemExit("BSP sky permutation must be unlit and non-discarding")
     overlay = (ROOT / "shaders/bsp_overlay.pipe").read_text(encoding="utf-8")
     overlay_required = (
         "uniform OverlayConstants",
@@ -107,11 +116,11 @@ def main() -> int:
         if value not in overlay:
             raise SystemExit(f"BSP overlay shader contract is missing: {value}")
     for name, pipe in (("resource", resource), ("alpha-test", alpha_test),
-                       ("overlay", overlay)):
+                       ("sky", sky), ("overlay", overlay)):
         for value in forbidden:
             if value in pipe:
                 raise SystemExit(f"BSP {name} shader contains forbidden value: {value}")
-    print("shader source contract passed: gears, BSP flat/textured/resource/alpha/overlay ABIs")
+    print("shader source contract passed: gears, BSP flat/textured/resource/alpha/sky/overlay ABIs")
     return 0
 
 

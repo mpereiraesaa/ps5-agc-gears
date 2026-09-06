@@ -53,6 +53,7 @@ IMAGE_FORMAT_RGBA8_UNORM = 1
 TEXTURE_FLAG_TRANSPARENT = 1
 TEXTURE_FLAG_FALLBACK = 2
 TEXTURE_FLAG_NODRAW = 4
+TEXTURE_FLAG_SKY = 8
 NODRAW_TEXTURE_NAMES = frozenset((
     b"aaatrigger", b"clip", b"hint", b"null", b"origin", b"skip",
 ))
@@ -260,6 +261,8 @@ def _parse_base_textures(data: bytes, lump: Lump) -> list[BaseTexture]:
         flags = TEXTURE_FLAG_TRANSPARENT if name.startswith(b"{") else 0
         if name.lower() in NODRAW_TEXTURE_NAMES:
             flags |= TEXTURE_FLAG_NODRAW
+        if name.lower() == b"sky":
+            flags |= TEXTURE_FLAG_SKY
         if offsets[0] == 0:
             if any(offsets):
                 raise BakeError(f"miptex {index} has an incomplete mip chain")

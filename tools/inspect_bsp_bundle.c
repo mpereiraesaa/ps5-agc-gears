@@ -1,6 +1,7 @@
 #include "bsp_bundle.h"
 #include "bsp_dynamic_lightmap.h"
 #include "bsp_alpha_test.h"
+#include "bsp_sky.h"
 #include "bsp_texture_descriptor.h"
 
 #include <stdio.h>
@@ -99,6 +100,20 @@ int main(int argc, char **argv)
             printf(" alpha_textures=0 alpha_draws=0");
         else {
             fprintf(stderr, "alpha-test planning failed: %d\n", alpha_result);
+            free(data);
+            return 1;
+        }
+        BspSkyPlan sky;
+        const int sky_result =
+            bsp_sky_plan(&view, view.camera_position, &sky);
+        if (sky_result == 0)
+            printf(" sky_textures=%u sky_draws=%u sky_target=%u:%u",
+                   sky.texture_count, sky.draw_count,
+                   sky.target_texture, sky.target_face);
+        else if (sky_result == -2)
+            printf(" sky_textures=0 sky_draws=0");
+        else {
+            fprintf(stderr, "sky planning failed: %d\n", sky_result);
             free(data);
             return 1;
         }

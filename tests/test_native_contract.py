@@ -203,8 +203,33 @@ def main() -> None:
     if "bsp-texture-alpha-native-release" not in makefile or \
             "BSP_TEXTURE_ALPHA_GATE=1" not in makefile:
         raise SystemExit("alpha-test gate release target missing")
+    for item in (
+        "BSP_TEXTURE_SKY_GATE requires BSP_TEXTURE_PATH=1",
+        "-DPS5_TEXTURE_SKY_GATE=1",
+        "src/bsp_sky.c",
+    ):
+        if item not in builder:
+            raise SystemExit(f"sky gate native build contract missing: {item}")
+    for item in (
+        "BSP_TEXTURE_PATH_BOOT schema=1 slice=sky",
+        "SKY_PASS_READY textures=%u draws=%u opaque_draws=%u",
+        "SKY_PASS_FRAME frame=%llu slot=%u mode=%s",
+        "const uint32_t expected_sky_draws =",
+        "const uint32_t expected_map_draws =",
+        "resource_composed.sky_draws !=",
+        "BSP_LOOP_BEGIN mode=texture-path-sky-soak",
+        "SKY_PASS_READBACK skip_control_buffer=%016llx",
+        "BSP_TEXTURE_PATH_SKY_COMPLETE frames=%llu textures=%u draws=%u",
+        'ps5log_close("bsp-texture-path-sky-soak-complete")',
+    ):
+        if item not in source:
+            raise SystemExit(f"sky gate runtime contract missing: {item}")
+    if "bsp-texture-sky-native-release" not in makefile or \
+            "BSP_TEXTURE_SKY_GATE=1" not in makefile:
+        raise SystemExit("sky gate release target missing")
     for item in ('bsp_resource.gs.bin', 'bsp_resource.ps.bin',
                  'bsp_alpha_test.gs.bin', 'bsp_alpha_test.ps.bin',
+                 'bsp_sky.gs.bin', 'bsp_sky.ps.bin',
                  'bsp_overlay.gs.bin', 'bsp_overlay.ps.bin'):
         if item not in assets:
             raise SystemExit(f"resource-foundation shader asset missing: {item}")

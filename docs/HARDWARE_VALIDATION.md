@@ -5,6 +5,40 @@ They are not compatibility claims for other firmware or consoles. Run logs and
 captures live in the private parent laboratory; this public boundary records
 only sanitized identifiers, hashes, outcomes and known limitations.
 
+## Phase 3 sky-pass gate
+
+The fourth ordered Phase 3 gate passed 10,000 frames on FW 12.02:
+
+- Run: `20260906T165427904Z_PPSA99997_ps5-agc-gears_0x6b9b27deac05`
+- Native ELF SHA-256:
+  `d3669c1d4b1be1c6dc14a55478ba951bf39364fae6bac96ea07db78e53dba670`
+- Signed fSELF SHA-256:
+  `037d34a8eb379b8b6f821ceb663427055d1e98fa77882176622ba356f49ab1f6`
+- Private bundle SHA-256/bytes:
+  `7536b8a28be3b815f93b35f035f9f957952e379722657194e1ab15172f9604e1` /
+  8,741,888
+- Transcript/manifest SHA-256:
+  `30ede3404d9588b3fbf4be74e9787739143255391eeee4b727f4157f7361136c` /
+  `d96c761554bc35cb93006e1147b6b04784f392244062c50f4aff296c0814dc88`
+- Requested/completed/connected: 10,000/10,000/10,000
+- Sky textures/draws: 1 / 158; compiled runtime pipelines: 4
+- Final skip-control/sky-pass GPU readbacks:
+  `8c9d51a9222a6ce4` / `67cfb3455c938c2e` (distinct)
+- Paired final lightmap slots: equal, pattern 1
+- Fence and VideoOut tokens: exact; guards intact; renderer errors: 0
+- Teardown: gap-free BYE at sequence 224, six allocations reclaimed,
+  exact-title closure and healthy four-service state
+
+The strict validator accepted the immutable manifest and exact private bundle
+identity. A private capture shows textured geometry beneath the dedicated sky
+pass; its SHA-256 is
+`199a6b2c8d1d1c901934db52516989dec797f13e20d809fa79d14bb956033be3`.
+The input implementation was unchanged; the operator moved the existing camera
+to a sky-visible view. Chiaki reused the registered console through the direct
+CLI stream path without pairing or re-registration. This gate proves the
+separate sky draw class and pass ordering, not the pending consolidated
+accounting or final 60,000-frame gates.
+
 ## Phase 3 alpha-test gate
 
 The third ordered Phase 3 gate passed 10,000 frames on FW 12.02:

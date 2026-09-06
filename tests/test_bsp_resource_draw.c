@@ -74,12 +74,12 @@ int main(void)
     assert(result.overlay_draws == 1u && result.command_dwords == 35u);
     assert(gs_updates == 3u && ps_updates == 2u);
 
-    uint32_t opaque = 0u, alpha = 0u;
-    assert(bsp_resource_draw_counts(&bundle, &opaque, &alpha) == 0);
-    assert(opaque == 1u && alpha == 0u);
+    uint32_t opaque = 0u, alpha = 0u, sky = 0u;
+    assert(bsp_resource_draw_counts(&bundle, &opaque, &alpha, &sky) == 0);
+    assert(opaque == 1u && alpha == 0u && sky == 0u);
     texture.flags = BSP_BUNDLE_TEXTURE_TRANSPARENT;
-    assert(bsp_resource_draw_counts(&bundle, &opaque, &alpha) == 0);
-    assert(opaque == 0u && alpha == 1u);
+    assert(bsp_resource_draw_counts(&bundle, &opaque, &alpha, &sky) == 0);
+    assert(opaque == 0u && alpha == 1u && sky == 0u);
     cursor = commands;
     result = (BspResourceComposeResult){0};
     gs_updates = ps_updates = 0u;
@@ -96,6 +96,19 @@ int main(void)
     assert(result.map_draws == 1u && result.opaque_draws == 0u &&
            result.alpha_test_draws == 1u && result.command_dwords == 30u);
     assert(gs_updates == 3u && ps_updates == 2u);
+    texture.flags = BSP_BUNDLE_TEXTURE_SKY;
+    assert(bsp_resource_draw_counts(&bundle, &opaque, &alpha, &sky) == 0);
+    assert(opaque == 0u && alpha == 0u && sky == 1u);
+    cursor = commands;
+    result = (BspResourceComposeResult){0};
+    gs_updates = ps_updates = 0u;
+    assert(bsp_resource_compose_map_pass(
+               &cursor, commands + 64, &frame, &bundle,
+               (const uint16_t *)(gpu + 52), BSP_RESOURCE_DRAW_SKY, 1,
+               gpu, sizeof(gpu), 7u, set_sh, draw, &result) == 0);
+    assert(result.map_draws == 1u && result.sky_draws == 1u &&
+           result.opaque_draws == 0u && result.alpha_test_draws == 0u &&
+           result.command_dwords == 26u);
     source.base_texture = 1u;
     cursor = commands;
     assert(bsp_resource_compose_map(

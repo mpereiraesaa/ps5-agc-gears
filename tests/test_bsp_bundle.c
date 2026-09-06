@@ -213,6 +213,15 @@ int main(void)
     light_checksums(light.bytes);
     assert(bsp_bundle_open(light.bytes, sizeof(light.bytes), &view) ==
            BSP_BUNDLE_GEOMETRY_INVALID);
+    texture->flags = BSP_BUNDLE_TEXTURE_SKY;
+    light_checksums(light.bytes);
+    assert(bsp_bundle_open(light.bytes, sizeof(light.bytes), &view) ==
+           BSP_BUNDLE_OK);
+    texture->flags = BSP_BUNDLE_TEXTURE_SKY |
+                     BSP_BUNDLE_TEXTURE_TRANSPARENT;
+    light_checksums(light.bytes);
+    assert(bsp_bundle_open(light.bytes, sizeof(light.bytes), &view) ==
+           BSP_BUNDLE_GEOMETRY_INVALID);
     texture->flags = BSP_BUNDLE_TEXTURE_TRANSPARENT;
     BspBundleImage *const image =
         (BspBundleImage *)(light.bytes + LIGHT_IMAGE_OFFSET);

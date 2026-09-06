@@ -54,7 +54,9 @@ def many(messages: list[str], prefix: str) -> list[dict[str, str]]:
             if message.startswith(prefix + " ")]
 
 
-def transcript(path: Path) -> tuple[dict[str, object], list[str], bytes]:
+def transcript(path: Path, *,
+               reason: str = "bsp-texture-path-alpha-soak-complete"
+               ) -> tuple[dict[str, object], list[str], bytes]:
     try:
         manifest = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -103,7 +105,6 @@ def transcript(path: Path) -> tuple[dict[str, object], list[str], bytes]:
             records[-1][0] != manifest.get("last_seq") or \
             any(level == "ERROR" for _, level, _ in records):
         fail("record sequence/count/error contract failed")
-    reason = "bsp-texture-path-alpha-soak-complete"
     if lines[-1] != f"BYE seq={records[-1][0]} reason={reason}" or \
             manifest.get("bye_fields", {}).get("reason") != reason:
         fail("BYE reason/sequence mismatch")
