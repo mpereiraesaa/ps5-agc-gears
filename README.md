@@ -99,6 +99,16 @@ Useful references:
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — development workflow
 - [`docs/RELEASING.md`](docs/RELEASING.md) — reproducible releases
 
+## Xash3D port
+
+The GoldSrc/Xash3D port that grew out of this renderer (BSP viewer with
+noclip, fence-retired resource foundation and the complete texture path)
+continues in
+[`mpereiraesaa/ps5-xash3d`](https://github.com/mpereiraesaa/ps5-xash3d),
+which forked this repository at commit `cbff264` with its full history. This
+repository is frozen as the standalone Gears demo: only fixes to the demo itself
+land here.
+
 ## Credits and license
 
 The native shell derives from
