@@ -6,7 +6,9 @@ BUILD := build/host
 	bsp-native-release bsp-noclip-native-release \
 	bsp-textured-native-release bsp-resource-native-release \
 	bsp-texture-path-native-release bsp-texture-mip-native-release \
-	bsp-texture-alpha-native-release bsp-texture-sky-native-release audit clean
+	bsp-texture-alpha-native-release bsp-texture-sky-native-release \
+	bsp-texture-accounting-native-release bsp-texture-final-native-release \
+	audit clean
 all: test audit
 
 $(BUILD):
@@ -99,6 +101,7 @@ test: $(addprefix $(BUILD)/,$(TESTS))
 	python3 tests/test_validate_texture_path_alpha_evidence.py
 	python3 tests/test_validate_texture_path_sky_evidence.py
 	python3 tests/test_validate_texture_path_accounting_evidence.py
+	python3 tests/test_validate_texture_path_final_evidence.py
 	rm -rf build tools/__pycache__ tests/__pycache__
 
 bsp-bundle: $(BUILD)/inspect_bsp_bundle
@@ -208,6 +211,11 @@ bsp-texture-accounting-native-release: bsp-bundle
 	BSP_BUNDLE="$(CURDIR)/build/bsp/map.ps5bsp" BSP_NOCLIP=1 \
 		BSP_TEXTURED=1 BSP_RESOURCE_FOUNDATION=1 BSP_TEXTURE_PATH=1 \
 		BSP_TEXTURE_ACCOUNTING_GATE=1 bash tools/build_native.sh
+
+bsp-texture-final-native-release: bsp-bundle
+	BSP_BUNDLE="$(CURDIR)/build/bsp/map.ps5bsp" BSP_NOCLIP=1 \
+		BSP_TEXTURED=1 BSP_RESOURCE_FOUNDATION=1 BSP_TEXTURE_PATH=1 \
+		BSP_TEXTURE_FINAL_GATE=1 bash tools/build_native.sh
 
 audit:
 	python3 tools/audit_publication.py

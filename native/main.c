@@ -57,6 +57,11 @@
 #include <time.h>
 #include <unistd.h>
 
+#if defined(PS5_TEXTURE_ACCOUNTING_GATE) || \
+    defined(PS5_TEXTURE_FINAL_GATE)
+#define PS5_TEXTURE_ACCOUNTING_ENABLED 1
+#endif
+
 extern const uint8_t ps5_gears_gs_start[], ps5_gears_gs_end[];
 extern const uint8_t ps5_gears_ps_start[], ps5_gears_ps_end[];
 #ifdef PS5_BSP_VIEWER
@@ -136,7 +141,11 @@ enum {
     GUARD_WORD = 0x51a6c3d9u,
     BSP_FIXED_COMMAND_DWORDS = 4096u,
     BSP_MAX_BUNDLE_BYTES = 64u * 1024u * 1024u,
-#ifdef PS5_TEXTURE_PATH
+#ifdef PS5_TEXTURE_FINAL_GATE
+    BSP_GATE_FRAME_COUNT = 60000u,
+    BSP_NOCLIP_MIN_MOVING_FRAMES = 600u,
+    BSP_NOCLIP_MIN_LOOKING_FRAMES = 120u,
+#elif defined(PS5_TEXTURE_PATH)
     BSP_GATE_FRAME_COUNT = 10000u,
     BSP_NOCLIP_MIN_MOVING_FRAMES = 600u,
     BSP_NOCLIP_MIN_LOOKING_FRAMES = 120u,
@@ -829,7 +838,7 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
             (unsigned long long)texture_upload.total_bytes,
             (unsigned long long)transient_slot->used,
             (unsigned long long)texture_upload.cumulative_total_bytes);
-#ifdef PS5_TEXTURE_ACCOUNTING_GATE
+#ifdef PS5_TEXTURE_ACCOUNTING_ENABLED
     if (frame->frame_index < 2u ||
         frame->frame_index + 2u >= BSP_GATE_FRAME_COUNT)
         (void)ps5log_printf(PS5LOG_MARK,
@@ -1494,7 +1503,9 @@ static uint64_t bright_pixel_count(const void *data, size_t bytes)
 static void park_complete(void)
 {
 #ifdef PS5_TEXTURE_PATH
-#ifdef PS5_TEXTURE_ACCOUNTING_GATE
+#ifdef PS5_TEXTURE_FINAL_GATE
+    ps5log_close("bsp-texture-path-final-soak-complete");
+#elif defined(PS5_TEXTURE_ACCOUNTING_GATE)
     ps5log_close("bsp-texture-path-accounting-soak-complete");
 #elif defined(PS5_TEXTURE_SKY_GATE)
     ps5log_close("bsp-texture-path-sky-soak-complete");
@@ -1560,7 +1571,15 @@ int main(void)
                         log_path ? log_path : "unavailable");
 #ifdef PS5_BSP_VIEWER
 #ifdef PS5_TEXTURE_PATH
-#ifdef PS5_TEXTURE_ACCOUNTING_GATE
+#ifdef PS5_TEXTURE_FINAL_GATE
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_TEXTURE_PATH_BOOT schema=1 slice=final "
+        "target=gfx1013 fw=12.02 transient_slots=2 "
+        "ownership=fence+videoout bundle_sha256=%s bundle_bytes=%u "
+        "soak_frames=%u input_gate=not-repeated",
+        PS5_BSP_BUNDLE_SHA256, PS5_BSP_BUNDLE_BYTES,
+        BSP_GATE_FRAME_COUNT);
+#elif defined(PS5_TEXTURE_ACCOUNTING_GATE)
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_TEXTURE_PATH_BOOT schema=1 slice=accounting "
         "target=gfx1013 fw=12.02 transient_slots=2 "
@@ -1649,7 +1668,11 @@ int main(void)
         return fail_pre_submit("noclip_pad_open", result);
     (void)ps5log_line(PS5LOG_MARK,
         "BSP_NOCLIP_PAD_READY sticks=dual triggers=vertical "
+#ifdef PS5_TEXTURE_ACCOUNTING_ENABLED
+        "connected_required=false");
+#else
         "connected_required=true");
+#endif
 #endif
     BspCommandPlan command_plan;
 #ifdef PS5_BSP_TEXTURED
@@ -2152,7 +2175,7 @@ int main(void)
         (unsigned long long)renderer.dynamic_lightmap_layout.patch_bytes,
         (unsigned long long)
             renderer.dynamic_lightmap_layout.dirty_span_bytes);
-#ifdef PS5_TEXTURE_ACCOUNTING_GATE
+#ifdef PS5_TEXTURE_ACCOUNTING_ENABLED
     const BspTextureResidency *const texture_residency =
         &renderer.texture_accounting.residency;
     (void)ps5log_printf(PS5LOG_MARK,
@@ -2187,7 +2210,7 @@ int main(void)
 #endif
 #if defined(PS5_TEXTURE_MIP_GATE) || defined(PS5_TEXTURE_ALPHA_GATE) || \
     defined(PS5_TEXTURE_SKY_GATE) || \
-    defined(PS5_TEXTURE_ACCOUNTING_GATE)
+    defined(PS5_TEXTURE_ACCOUNTING_ENABLED)
     uint32_t minimum_mips = 15u;
     uint32_t maximum_mips = 0u;
     uint64_t mip_chain_bytes = 0u;
@@ -2294,7 +2317,7 @@ int main(void)
         renderer.sky_plan.target_face, PS5_BSP_RESOURCE_PS_ISA_BYTES,
         PS5_BSP_SKY_PS_ISA_BYTES);
 #endif
-#ifdef PS5_TEXTURE_ACCOUNTING_GATE
+#ifdef PS5_TEXTURE_ACCOUNTING_ENABLED
     uint32_t accounting_opaque_draws = 0u;
     uint32_t accounting_alpha_draws = 0u;
     uint32_t accounting_sky_draws = 0u;
@@ -2462,7 +2485,16 @@ int main(void)
     input.user = &renderer;
 #ifdef PS5_BSP_VIEWER
 #ifdef PS5_TEXTURE_PATH
-#ifdef PS5_TEXTURE_ACCOUNTING_GATE
+#ifdef PS5_TEXTURE_FINAL_GATE
+    (void)ps5log_line(PS5LOG_MARK,
+        "BSP_LOOP_BEGIN mode=texture-path-final-soak buffers=2 "
+        "color_dma=false depth_dma=true indexed=true frames=60000 "
+        "opaque_pass=separate alpha_test_pass=separate sky_pass=separate "
+        "sampler=anisotropic4x dynamic_lightmap=bounded "
+        "residency=partitioned uploads=checked-per-frame "
+        "descriptors=per-frame overlay=fixed retirement=fence+videoout "
+        "input_dependency=none");
+#elif defined(PS5_TEXTURE_ACCOUNTING_GATE)
     (void)ps5log_line(PS5LOG_MARK,
         "BSP_LOOP_BEGIN mode=texture-path-accounting-soak buffers=2 "
         "color_dma=false depth_dma=true indexed=true frames=10000 "
@@ -2608,7 +2640,7 @@ int main(void)
         (unsigned long long)run.frames_completed,
         (unsigned long long)run.telemetry.errors);
 #endif
-#ifndef PS5_TEXTURE_ACCOUNTING_GATE
+#ifndef PS5_TEXTURE_ACCOUNTING_ENABLED
     const int input_continuity_valid =
         run.telemetry.errors == 0u &&
         run.telemetry.present_interval_over_budget == 0u &&
@@ -2618,7 +2650,7 @@ int main(void)
 #endif
 #ifdef PS5_RESOURCE_FOUNDATION
     const int resource_valid =
-#ifdef PS5_TEXTURE_ACCOUNTING_GATE
+#ifdef PS5_TEXTURE_ACCOUNTING_ENABLED
         run.telemetry.errors == 0u &&
         run.telemetry.present_interval_over_budget == 0u &&
         renderer.pad_read_errors == 0u &&
@@ -2729,7 +2761,7 @@ int main(void)
         (unsigned long long)readback_bytes,
         (unsigned long long)run.frames_completed);
 #endif
-#ifdef PS5_TEXTURE_ACCOUNTING_GATE
+#ifdef PS5_TEXTURE_ACCOUNTING_ENABLED
     BspTextureUploadSummary texture_upload_summary;
     if (bsp_texture_accounting_finalize(
             &renderer.texture_accounting, run.frames_completed,
@@ -2834,7 +2866,7 @@ int main(void)
         renderer.alpha_test_plan.draw_count,
         (unsigned long long)run.telemetry.errors);
 #endif
-#ifdef PS5_TEXTURE_ACCOUNTING_GATE
+#ifdef PS5_TEXTURE_ACCOUNTING_ENABLED
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_TEXTURE_PATH_ACCOUNTING_COMPLETE frames=%llu "
         "pool_resident_bytes=%llu texture_payload_bytes=%llu "
@@ -2851,13 +2883,35 @@ int main(void)
         (unsigned long long)
             renderer.texture_accounting.upload.sequence_hash,
         (unsigned long long)run.telemetry.errors);
+#ifdef PS5_TEXTURE_FINAL_GATE
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_TEXTURE_PATH_FINAL_COMPLETE schema=1 frames=%llu "
+        "mip_chains=%u opaque_draws=%u alpha_draws=%u sky_draws=%u "
+        "pipelines=4 sampler=anisotropic4x dynamic_lightmap=bounded "
+        "pool_resident_bytes=%llu texture_payload_bytes=%llu "
+        "upload_bytes_total=%llu sequence_hash=%016llx "
+        "readback=gpu-visible input_dependency=none tokens=exact "
+        "guards=intact errors=%llu",
+        (unsigned long long)run.frames_completed,
+        renderer.bsp_bundle.texture_count, accounting_opaque_draws,
+        accounting_alpha_draws, accounting_sky_draws,
+        (unsigned long long)
+            renderer.texture_accounting.residency.pool_resident_bytes,
+        (unsigned long long)
+            renderer.texture_accounting.residency.texture_payload_bytes,
+        (unsigned long long)
+            renderer.texture_accounting.upload.upload_bytes_total,
+        (unsigned long long)
+            renderer.texture_accounting.upload.sequence_hash,
+        (unsigned long long)run.telemetry.errors);
+#endif
 #endif
 #endif
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_RESOURCE_SOAK_COMPLETE frames=%llu connected_frames=%llu "
         "read_errors=%llu textures=%u descriptor_dwords=%u "
         "constants=per-frame overlay=transient pipelines=4 "
-#ifdef PS5_TEXTURE_ACCOUNTING_GATE
+#ifdef PS5_TEXTURE_ACCOUNTING_ENABLED
         "input_dependency=none "
 #endif
         "tokens=exact guards=intact errors=%llu",

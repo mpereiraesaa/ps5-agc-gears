@@ -5,21 +5,64 @@ They are not compatibility claims for other firmware or consoles. Run logs and
 captures live in the private parent laboratory; this public boundary records
 only sanitized identifiers, hashes, outcomes and known limitations.
 
-## Phase 3 resident/upload-accounting gate
+## Phase 3 final 60,000-frame gate
 
-The fifth ordered Phase 3 gate passed 10,000 frames on FW 12.02:
+The complete ordered texture path passed its final structured soak on FW 12.02:
 
-- Run: `20260906T180203834Z_PPSA99997_ps5-agc-gears_0x6f4b7cbd361b`
+- Run: `20260906T182418688Z_PPSA99997_ps5-agc-gears_0x70824724af5d`
 - Native ELF SHA-256:
-  `8bf3622af44ace9f013054119f2e80887c48031df30050106402a9daf1a13308`
+  `64a8c4604bbbd659636ae68ba801b67f9cb91afdbce0104015225ad71bdf11dc`
 - Signed fSELF SHA-256:
-  `eb3d0a18e5abe0e4646386e74f884a6a594051fd81ad870175f562953ece6792`
+  `a01454dc626d35e6553e56cbe45c33d1da614d10eaa3db1a6b665347eff5f15c`
 - Private bundle SHA-256/bytes:
   `7536b8a28be3b815f93b35f035f9f957952e379722657194e1ab15172f9604e1` /
   8,741,888
 - Transcript/manifest SHA-256:
-  `8f64357391ac9ca00392e6483694f8035d83ceaa72dc9465699f8733b16aa20d` /
-  `205d5f418d38ee8c165d79b4c8a658853df714ba310f64846d2a4cf6ff14dfbf`
+  `b69d5a9cd514d4ef94d3b706fc9005340f054add33c1e4ff8f941649ff4e39f4` /
+  `b977861bf0d6ebe08883176c0843ef52674a5a25cd2da40eab5d49e049c87c0d`
+- Requested/completed: 60,000/60,000; structured records: 1,144
+- Controller connected frames: 4,242; input dependency: none
+- Mip chains and opaque/alpha/sky draws: 122 and 2,915/137/158
+- Compiled runtime pipelines: 4; sampler: anisotropic 4:1
+- Pool-resident/texture-payload bytes: 68,731,904 / 12,251,392
+- Total transient/lightmap/upload bytes:
+  762,000,000 / 19,471,872 / 781,471,872
+- Upload frames: 2 full plus 59,998 bounded; sequence digest:
+  `b4f0d5a0fa607141`
+- Final alternating-lightmap GPU readbacks:
+  `087617a14bd8a957` / `888273881ef5e384` (distinct)
+- Presentation max/over-budget: 16.803418 ms / 0; renderer errors: 0
+- Fence and VideoOut tokens: exact; guards intact; six allocations reclaimed
+- Teardown: gap-free BYE at sequence 1,144, exact-title closure and two stable
+  healthy four-service checks
+
+The strict final validator recomputed the upload totals and required the final
+sample, summary and completion digest to agree against the exact bundle. A
+private compositor-visible Remote Play capture was taken while the exact final
+artifact was still presenting; its SHA-256 is
+`2a80b29d643f33fe3c0f85e4153ab1b346d9d408f4b0a95bdd6a322859a751e9`.
+Chiaki reused its registered console entry through the direct CLI stream helper,
+without opening the main client, pairing or re-registration. The DualSense was
+connected during part of the run, but neither connection nor movement was a
+success condition because the input path was unchanged. This gate closes Phase
+3; entities, PVS, water, sprites/models, platform/audio and engine integration
+remain later phases.
+
+## Phase 3 resident/upload-accounting gate
+
+The fifth ordered Phase 3 gate passed 10,000 frames on FW 12.02:
+
+- Run: `20260906T181828532Z_PPSA99997_ps5-agc-gears_0x7030c07206e6`
+- Native ELF SHA-256:
+  `d5c1f7cb0d5f3bfc5731e7b323c05ebe422ee0cb12d50ce1cca3998b4fc95e4f`
+- Signed fSELF SHA-256:
+  `a62b2efaac7c4c76f6102ee55b43639e2cf7d99bb220864a4656ce3d7209045d`
+- Private bundle SHA-256/bytes:
+  `7536b8a28be3b815f93b35f035f9f957952e379722657194e1ab15172f9604e1` /
+  8,741,888
+- Transcript/manifest SHA-256:
+  `068b11998fbe7d700be2545886dc646c81a5eb8eb80a4985adaa9824591286c7` /
+  `ce04e57cc20b4538082a292dc417ce9eadd493654cf3b6ec2d7a59da035bfa31`
 - Requested/completed: 10,000/10,000; controller dependency: none
 - Pool-resident/texture-payload bytes: 68,731,904 / 12,251,392
 - Total transient/lightmap/upload bytes:
@@ -35,19 +78,19 @@ The fifth ordered Phase 3 gate passed 10,000 frames on FW 12.02:
 
 The strict validator recomputed every byte total, linked the terminal resource
 readbacks to the two deterministic lightmap patterns and accepted the immutable
-manifest against the exact bundle identity. A private 1280x720 direct-stream
-capture shows the complete textured scene and overlay; its SHA-256 is
-`525063dbd05d35b7543a60414c3fe9811d52b303d15b4baa7ae24c2c5f0b47b6`.
-Chiaki used the registered console directly from its CLI helper, without its
-client window, pairing or re-registration.
+manifest against the exact bundle identity. The gate used no controller input.
+The direct Chiaki CLI path was exercised without its client window, pairing or
+re-registration; its post-teardown black frame was rejected rather than
+misclassified as visual evidence. The authoritative visual capture is reserved
+for the final artifact while its VideoOut lifecycle remains active.
 
 An earlier attempt reached all 10,000 clean frames but was correctly rejected
 with `parked-retain`: an inherited success condition required a connected
 controller even though input code was unchanged. The accepted artifact makes
 this boundary explicit with `input_gate=not-repeated` and
 `input_dependency=none`; pad-read failures are still fatal and connection
-counts remain observable. This gate proves consolidated texture accounting,
-not the pending final 60,000-frame closure.
+counts remain observable. This gate proves consolidated texture accounting;
+the separate final section above records the later 60,000-frame closure.
 
 ## Phase 3 sky-pass gate
 

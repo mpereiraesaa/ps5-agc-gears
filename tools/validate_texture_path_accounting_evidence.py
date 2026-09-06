@@ -13,24 +13,34 @@ from validate_texture_path_alpha_evidence import (
 )
 
 
-SAMPLED_FRAMES = [0, 1, 9_998, 9_999]
-
-
 def validate(path: Path, *, bundle_sha256: str,
-             bundle_bytes: int) -> dict[str, object]:
+             bundle_bytes: int, expected_frames: int = 10_000,
+             expected_slice: str = "accounting",
+             expected_reason: str =
+                 "bsp-texture-path-accounting-soak-complete",
+             expected_loop_mode: str =
+                 "texture-path-accounting-soak") -> dict[str, object]:
+    if expected_frames < 4:
+        fail("accounting evidence requires at least four frames")
+    sampled_frames = [0, 1, expected_frames - 2, expected_frames - 1]
     manifest, messages, data = transcript(
-        path.resolve(), reason="bsp-texture-path-accounting-soak-complete"
+        path.resolve(), reason=expected_reason
     )
     boot = one(messages, "BSP_TEXTURE_PATH_BOOT")
-    if boot.get("schema") != "1" or boot.get("slice") != "accounting" or \
+    if boot.get("schema") != "1" or \
+            boot.get("slice") != expected_slice or \
             boot.get("target") != "gfx1013" or \
             number(boot, "transient_slots") != 2 or \
             boot.get("ownership") != "fence+videoout" or \
             boot.get("bundle_sha256") != bundle_sha256 or \
             number(boot, "bundle_bytes") != bundle_bytes or \
-            number(boot, "soak_frames") != 10_000 or \
+            number(boot, "soak_frames") != expected_frames or \
             boot.get("input_gate") != "not-repeated":
         fail("accounting boot contract mismatch")
+    pad = one(messages, "BSP_NOCLIP_PAD_READY")
+    if pad.get("sticks") != "dual" or pad.get("triggers") != "vertical" or \
+            pad.get("connected_required") != "false":
+        fail("texture-only input-independence contract mismatch")
 
     residency = one(messages, "TEXTURE_RESIDENCY_READY")
     if residency.get("schema") != "1" or \
@@ -96,9 +106,9 @@ def validate(path: Path, *, bundle_sha256: str,
         fail("inherited texture-feature accounting mismatch")
 
     loop = one(messages, "BSP_LOOP_BEGIN")
-    if loop.get("mode") != "texture-path-accounting-soak" or \
+    if loop.get("mode") != expected_loop_mode or \
             number(loop, "buffers") != 2 or \
-            number(loop, "frames") != 10_000 or \
+            number(loop, "frames") != expected_frames or \
             loop.get("opaque_pass") != "separate" or \
             loop.get("alpha_test_pass") != "separate" or \
             loop.get("sky_pass") != "separate" or \
@@ -112,15 +122,15 @@ def validate(path: Path, *, bundle_sha256: str,
 
     dynamic_rows = many(messages, "DYNAMIC_LIGHTMAP_FRAME")
     upload_rows = many(messages, "TEXTURE_UPLOAD_FRAME")
-    if [number(row, "frame") for row in dynamic_rows] != SAMPLED_FRAMES or \
-            [number(row, "frame") for row in upload_rows] != SAMPLED_FRAMES:
+    if [number(row, "frame") for row in dynamic_rows] != sampled_frames or \
+            [number(row, "frame") for row in upload_rows] != sampled_frames:
         fail("upload sample sequence mismatch")
     last_cumulative = -1
     last_hash = ""
     transient_per_frame = number(upload_rows[0], "transient_bytes")
     pattern_hashes: dict[int, str] = {}
     for index, (dynamic, upload) in enumerate(zip(dynamic_rows, upload_rows)):
-        frame = SAMPLED_FRAMES[index]
+        frame = sampled_frames[index]
         first = frame < 2
         pattern = frame & 1
         expected_lightmap = image_bytes if first else patch_bytes
@@ -160,10 +170,13 @@ def validate(path: Path, *, bundle_sha256: str,
         last_hash = sequence_hash
 
     summary = one(messages, "TEXTURE_UPLOAD_SUMMARY")
-    expected_transient_total = transient_per_frame * 10_000
-    expected_lightmap_total = image_bytes * 2 + patch_bytes * 9_998
+    expected_transient_total = transient_per_frame * expected_frames
+    expected_bounded_frames = expected_frames - 2
+    expected_lightmap_total = image_bytes * 2 + \
+        patch_bytes * expected_bounded_frames
     expected_upload_total = expected_transient_total + expected_lightmap_total
-    if summary.get("schema") != "1" or number(summary, "frames") != 10_000 or \
+    if summary.get("schema") != "1" or \
+            number(summary, "frames") != expected_frames or \
             number(summary, "transient_bytes_per_frame") != \
                 transient_per_frame or \
             number(summary, "bounded_lightmap_bytes_per_frame") != \
@@ -178,7 +191,8 @@ def validate(path: Path, *, bundle_sha256: str,
             number(summary, "frame_bytes_max") != \
                 transient_per_frame + image_bytes or \
             number(summary, "full_upload_frames") != 2 or \
-            number(summary, "bounded_upload_frames") != 9_998 or \
+            number(summary, "bounded_upload_frames") != \
+                expected_bounded_frames or \
             summary.get("sequence_hash") != last_hash or \
             summary.get("sequence") != "gap-free" or \
             summary.get("accounting") != "checked-u64":
@@ -187,7 +201,8 @@ def validate(path: Path, *, bundle_sha256: str,
     for prefix in ("RESOURCE_FRAME_READY", "RESOURCE_FRAME_SEALED",
                    "RESOURCE_FRAME_SUBMITTED", "RESOURCE_FRAME_RETIRED",
                    "BSP_VIDEOOUT_TOKEN"):
-        if [number(row, "frame") for row in many(messages, prefix)] != [0, 9_999]:
+        if [number(row, "frame") for row in many(messages, prefix)] != \
+                [0, expected_frames - 1]:
             fail(f"{prefix} bookends mismatch")
     sealed = many(messages, "RESOURCE_FRAME_SEALED")
     submitted = many(messages, "RESOURCE_FRAME_SUBMITTED")
@@ -202,8 +217,9 @@ def validate(path: Path, *, bundle_sha256: str,
                 number(video[index], "expected") != number(video[index], "observed"):
             fail("exact fence/VideoOut retirement mismatch")
     terminal = [row for row in many(messages, "BSP_FRAME")
-                if row.get("frame") == "9999"]
-    if len(terminal) != 1 or number(terminal[0], "completed") != 10_000 or \
+                if row.get("frame") == str(expected_frames - 1)]
+    if len(terminal) != 1 or \
+            number(terminal[0], "completed") != expected_frames or \
             number(terminal[0], "present_interval_over_budget") != 0 or \
             number(terminal[0], "errors") != 0:
         fail("terminal telemetry is not clean")
@@ -221,7 +237,7 @@ def validate(path: Path, *, bundle_sha256: str,
             readback.get("buffers_distinct") != "true" or \
             readback.get("surrounding") != "stable" or \
             readback.get("guards") != "intact" or \
-            number(readback, "frames") != 10_000:
+            number(readback, "frames") != expected_frames:
         fail("dynamic lightmap/readback inheritance mismatch")
     resource_readback = one(messages, "BSP_RESOURCE_READBACK")
     if resource_readback.get("buffer0") != readback.get("gpu_buffer0") or \
@@ -230,12 +246,12 @@ def validate(path: Path, *, bundle_sha256: str,
             number(resource_readback, "bright_pixels0") <= 0 or \
             number(resource_readback, "bright_pixels1") <= 0 or \
             resource_readback.get("guards") != "intact" or \
-            number(resource_readback, "frames") != 10_000 or \
+            number(resource_readback, "frames") != expected_frames or \
             number(resource_readback, "errors") != 0 or \
             resource_readback.get("overlay") != "transient":
         fail("dynamic lightmap readback does not match terminal buffers")
     lightmap_complete = one(messages, "BSP_TEXTURE_PATH_LIGHTMAP_COMPLETE")
-    if number(lightmap_complete, "frames") != 10_000 or \
+    if number(lightmap_complete, "frames") != expected_frames or \
             number(lightmap_complete, "resident_bytes") != resident or \
             number(lightmap_complete, "uploaded_bytes") != \
                 expected_upload_total or \
@@ -247,7 +263,7 @@ def validate(path: Path, *, bundle_sha256: str,
             number(lightmap_complete, "errors") != 0:
         fail("dynamic-lightmap completion inheritance mismatch")
     complete = one(messages, "BSP_TEXTURE_PATH_ACCOUNTING_COMPLETE")
-    if number(complete, "frames") != 10_000 or \
+    if number(complete, "frames") != expected_frames or \
             number(complete, "pool_resident_bytes") != resident or \
             number(complete, "texture_payload_bytes") != texture_payload or \
             number(complete, "upload_bytes_total") != expected_upload_total or \
@@ -260,8 +276,8 @@ def validate(path: Path, *, bundle_sha256: str,
             number(complete, "errors") != 0:
         fail("accounting completion contract mismatch")
     resource = one(messages, "BSP_RESOURCE_SOAK_COMPLETE")
-    if number(resource, "frames") != 10_000 or \
-            number(resource, "connected_frames") > 10_000 or \
+    if number(resource, "frames") != expected_frames or \
+            number(resource, "connected_frames") > expected_frames or \
             number(resource, "read_errors") != 0 or \
             number(resource, "pipelines") != 4 or \
             resource.get("input_dependency") != "none" or \
@@ -277,7 +293,7 @@ def validate(path: Path, *, bundle_sha256: str,
     return {
         "run_id": manifest.get("run_id"),
         "records": manifest.get("records"),
-        "frames": 10_000,
+        "frames": expected_frames,
         "pool_resident_bytes": resident,
         "texture_payload_bytes": texture_payload,
         "upload_bytes_total": expected_upload_total,

@@ -92,7 +92,11 @@
 - [x] Add the `{` alpha-test permutation as a separate opaque/alpha draw pass;
   pass its compiled kill-bit contract and paired-state 10,000-frame FW 12.02
   hardware gate with distinct control/alpha readbacks.
-- [ ] Add sky as a separate pass.
-- [ ] Pass and archive the complete Phase 3 60,000-frame hardware gate.
+- [x] Add sky as a separate unlit pass and pass its paired-state 10,000-frame
+  hardware gate with 158 draws and distinct skip/pass readbacks.
+- [x] Add checked resident/upload accounting with a gap-free per-frame digest
+  and pass its 10,000-frame hardware gate.
+- [x] Pass and archive the complete Phase 3 60,000-frame hardware gate with
+  exact accounting, GPU-visible readbacks, intact guards and zero errors.
 - [x] Require pull requests on `main`; require the host CI check after this PR
   establishes its final check context.

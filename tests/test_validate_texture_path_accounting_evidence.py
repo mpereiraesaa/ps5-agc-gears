@@ -28,6 +28,7 @@ def make_evidence(directory: Path) -> Path:
     messages = [
         "LOG_BOOT_MONOTONIC_NS=0x1234",
         f"BSP_TEXTURE_PATH_BOOT schema=1 slice=accounting target=gfx1013 fw=test transient_slots=2 ownership=fence+videoout bundle_sha256={BUNDLE_SHA} bundle_bytes=42 soak_frames=10000 input_gate=not-repeated",
+        "BSP_NOCLIP_PAD_READY sticks=dual triggers=vertical connected_required=false",
         "RESOURCE_HEAP_READY bytes=200000 allocations=6 pool=fence-retired transient_slots=2 slot_bytes=15000",
         "DYNAMIC_LIGHTMAP_READY image=50x50 image_bytes=10000 patch=1,1+8x8 hit_face=3 patch_bytes=256 dirty_span_bytes=512 slots=2 guards=256 selection=center-ray",
         "TEXTURE_RESIDENCY_READY schema=1 pool_capacity_bytes=200000 pool_resident_bytes=141024 bsp_allocation_bytes=60000 shader_allocation_bytes=10000 depth_allocation_bytes=20000 transient_allocation_bytes=30000 lightmap_allocation_bytes=21024 texture_payload_bytes=60000 base_texture_bytes=30000 source_lightmap_bytes=10000 dynamic_lightmap_image_bytes=20000 lightmap_slots=2 allocations=6 accounting=exact",

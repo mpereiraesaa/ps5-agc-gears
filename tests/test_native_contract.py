@@ -251,6 +251,23 @@ def main() -> None:
     if "bsp-texture-accounting-native-release" not in makefile or \
             "BSP_TEXTURE_ACCOUNTING_GATE=1" not in makefile:
         raise SystemExit("accounting gate release target missing")
+    for item in (
+        "BSP_TEXTURE_FINAL_GATE requires BSP_TEXTURE_PATH=1",
+        "-DPS5_TEXTURE_FINAL_GATE=1",
+    ):
+        if item not in builder:
+            raise SystemExit(f"final texture gate build contract missing: {item}")
+    for item in (
+        "BSP_TEXTURE_PATH_BOOT schema=1 slice=final",
+        "BSP_LOOP_BEGIN mode=texture-path-final-soak",
+        "BSP_TEXTURE_PATH_FINAL_COMPLETE schema=1 frames=%llu",
+        'ps5log_close("bsp-texture-path-final-soak-complete")',
+    ):
+        if item not in source:
+            raise SystemExit(f"final texture gate runtime contract missing: {item}")
+    if "bsp-texture-final-native-release" not in makefile or \
+            "BSP_TEXTURE_FINAL_GATE=1" not in makefile:
+        raise SystemExit("final texture gate release target missing")
     for item in ('bsp_resource.gs.bin', 'bsp_resource.ps.bin',
                  'bsp_alpha_test.gs.bin', 'bsp_alpha_test.ps.bin',
                  'bsp_sky.gs.bin', 'bsp_sky.ps.bin',

@@ -78,11 +78,14 @@ Every frame is recorded in order before submit. The ledger rejects a skipped or
 repeated frame, a changed transient footprint, a first/full lightmap upload
 outside the first use of each slot, a changed bounded-patch size or any integer
 overflow. Four `TEXTURE_UPLOAD_FRAME` bookends expose the exact component and
-cumulative values. `TEXTURE_UPLOAD_SUMMARY` proves the complete 10,000-frame
-sequence through component totals, min/max bytes, 2 full plus 9,998 bounded
-updates and an order-sensitive FNV-64 digest. The strict validator recomputes
-the closed-form totals and requires the final sampled digest to match both the
-summary and `BSP_TEXTURE_PATH_ACCOUNTING_COMPLETE`.
+cumulative values. `TEXTURE_UPLOAD_SUMMARY` proves the complete configured
+sequence through component totals, min/max bytes, exactly two full updates,
+all remaining bounded updates and an order-sensitive FNV-64 digest. The strict
+accounting and final validators recompute the closed-form totals and require the
+final sampled digest to match the summary and completion records. The final
+60,000-frame build additionally emits `BSP_TEXTURE_PATH_FINAL_COMPLETE`, which
+joins the mip, opaque/alpha/sky draw, pipeline, sampler, accounting, readback,
+ownership and guard contracts in one terminal record.
 
 This texture-only gate declares `input_dependency=none` and
 `input_gate=not-repeated`. Controller connection and movement remain observed

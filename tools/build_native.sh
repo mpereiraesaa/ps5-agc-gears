@@ -39,6 +39,7 @@ bsp_texture_mip_gate=${BSP_TEXTURE_MIP_GATE:-0}
 bsp_texture_alpha_gate=${BSP_TEXTURE_ALPHA_GATE:-0}
 bsp_texture_sky_gate=${BSP_TEXTURE_SKY_GATE:-0}
 bsp_texture_accounting_gate=${BSP_TEXTURE_ACCOUNTING_GATE:-0}
+bsp_texture_final_gate=${BSP_TEXTURE_FINAL_GATE:-0}
 dev_conf=${PS5LOG_DEV_CONF:-$root/dev.conf}
 bsp_flags=()
 [[ $bsp_noclip == 0 || $bsp_noclip == 1 ]] || {
@@ -65,6 +66,9 @@ bsp_flags=()
 [[ $bsp_texture_accounting_gate == 0 ||
    $bsp_texture_accounting_gate == 1 ]] || {
     echo "BSP_TEXTURE_ACCOUNTING_GATE must be 0 or 1" >&2; exit 2;
+}
+[[ $bsp_texture_final_gate == 0 || $bsp_texture_final_gate == 1 ]] || {
+    echo "BSP_TEXTURE_FINAL_GATE must be 0 or 1" >&2; exit 2;
 }
 if [[ $bsp_noclip == 1 && -z $bsp_bundle ]]; then
     echo "BSP_NOCLIP requires BSP_BUNDLE" >&2
@@ -98,8 +102,13 @@ if [[ $bsp_texture_accounting_gate == 1 && $bsp_texture_path != 1 ]]; then
     echo "BSP_TEXTURE_ACCOUNTING_GATE requires BSP_TEXTURE_PATH=1" >&2
     exit 2
 fi
+if [[ $bsp_texture_final_gate == 1 && $bsp_texture_path != 1 ]]; then
+    echo "BSP_TEXTURE_FINAL_GATE requires BSP_TEXTURE_PATH=1" >&2
+    exit 2
+fi
 if ((bsp_texture_mip_gate + bsp_texture_alpha_gate +
-     bsp_texture_sky_gate + bsp_texture_accounting_gate > 1)); then
+     bsp_texture_sky_gate + bsp_texture_accounting_gate +
+     bsp_texture_final_gate > 1)); then
     echo "texture-path hardware gates are mutually exclusive" >&2
     exit 2
 fi
@@ -140,6 +149,9 @@ if [[ -n $bsp_bundle ]]; then
     fi
     if [[ $bsp_texture_accounting_gate == 1 ]]; then
         bsp_flags+=(-DPS5_TEXTURE_ACCOUNTING_GATE=1)
+    fi
+    if [[ $bsp_texture_final_gate == 1 ]]; then
+        bsp_flags+=(-DPS5_TEXTURE_FINAL_GATE=1)
     fi
 fi
 

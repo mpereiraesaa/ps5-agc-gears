@@ -245,31 +245,69 @@ Acceptance requires:
 - a gap-free `bsp-texture-path-accounting-soak-complete` BYE.
 
 `validate_texture_path_accounting_evidence.py` accepted run
-`20260906T180203834Z_PPSA99997_ps5-agc-gears_0x6f4b7cbd361b`: 10,000 frames,
+`20260906T181828532Z_PPSA99997_ps5-agc-gears_0x7030c07206e6`: 10,000 frames,
 226 structured records, 68,731,904 pool-resident bytes, 12,251,392 texture
 payload bytes, 133,671,872 uploaded bytes and sequence digest
 `9ee815de96b54c11`. The transcript and manifest SHA-256 values are
-`8f64357391ac9ca00392e6483694f8035d83ceaa72dc9465699f8733b16aa20d`
+`068b11998fbe7d700be2545886dc646c81a5eb8eb80a4985adaa9824591286c7`
 and
-`205d5f418d38ee8c165d79b4c8a658853df714ba310f64846d2a4cf6ff14dfbf`.
+`ce04e57cc20b4538082a292dc417ce9eadd493654cf3b6ec2d7a59da035bfa31`.
 The native ELF/fSELF SHA-256 values are
-`8bf3622af44ace9f013054119f2e80887c48031df30050106402a9daf1a13308`
+`d5c1f7cb0d5f3bfc5731e7b323c05ebe422ee0cb12d50ce1cca3998b4fc95e4f`
 and
-`eb3d0a18e5abe0e4646386e74f884a6a594051fd81ad870175f562953ece6792`.
+`a62b2efaac7c4c76f6102ee55b43639e2cf7d99bb220864a4656ce3d7209045d`.
+
+The direct Chiaki CLI path reused the registered entry without opening the
+client window or pairing. Its post-teardown black frame was rejected, so the
+phase-level visual proof is intentionally deferred to the final artifact while
+VideoOut remains active. Since input code was unchanged, this texture-only gate
+reports both `connected_required=false` and `input_dependency=none`; connection
+remains telemetry and pad-read errors remain fatal, but no DualSense movement
+gate is repeated.
+
+## Gate 6: final structured soak
+
+The complete Phase 3 path passed its final 60,000-frame hardware gate on FW
+12.02. This build retains all five ordered feature contracts and runs their
+consolidated accounting ledger for six times the Gate 5 duration. It requires
+the exact private bundle identity, but deliberately does not require controller
+connection or movement because the input implementation did not change.
+
+`validate_texture_path_final_evidence.py` accepted run
+`20260906T182418688Z_PPSA99997_ps5-agc-gears_0x70824724af5d`: 60,000 completed
+frames, 1,144 structured records, zero errors and no presentation intervals
+over 17 ms. It proved 122 mip chains; 2,915 opaque, 137 alpha-tested and 158 sky
+draws; all four compiled pipelines; 68,731,904 pool-resident bytes; 12,251,392
+texture-payload bytes; and 781,471,872 uploaded bytes. Exactly two frames used
+the 2,056,192-byte full lightmap upload and 59,998 used the 256-byte bounded
+patch. The gap-free upload digest is `b4f0d5a0fa607141`.
+
+The terminal framebuffer readbacks are `087617a14bd8a957` and
+`888273881ef5e384`. They are GPU-visible and distinct, the dynamic-lightmap
+surrounding bytes remained stable, every guard was intact, fence and VideoOut
+tokens were exact and all six allocations were reclaimed before the gap-free
+`bsp-texture-path-final-soak-complete` BYE. The transcript and manifest SHA-256
+values are
+`b69d5a9cd514d4ef94d3b706fc9005340f054add33c1e4ff8f941649ff4e39f4`
+and
+`b977861bf0d6ebe08883176c0843ef52674a5a25cd2da40eab5d49e049c87c0d`.
+The reproducible native ELF/fSELF SHA-256 values are
+`64a8c4604bbbd659636ae68ba801b67f9cb91afdbce0104015225ad71bdf11dc`
+and
+`a01454dc626d35e6553e56cbe45c33d1da614d10eaa3db1a6b665347eff5f15c`.
 
 The private Remote Play capture SHA-256 is
-`525063dbd05d35b7543a60414c3fe9811d52b303d15b4baa7ae24c2c5f0b47b6`.
-The direct Chiaki CLI path reused the registered entry without opening the
-client window or pairing. Since input code was unchanged, this texture-only
-gate explicitly reports `input_dependency=none`; connection remains telemetry
-and pad-read errors remain fatal, but no DualSense movement gate is repeated.
+`2a80b29d643f33fe3c0f85e4153ab1b346d9d408f4b0a95bdd6a322859a751e9`.
+It was captured while the exact final artifact and VideoOut lifecycle were
+still active. Chiaki reused its registered entry through the direct CLI helper;
+no client window, pairing or re-registration was needed. The operator's
+DualSense happened to be connected for 4,242 frames, but movement was neither
+requested nor used as an acceptance condition. The exact title was then closed
+and all four console services passed two stable health checks.
 
-## Remaining ordered gates
-
-Gates 1–5 do not claim completion of Phase 3. The remaining order is:
-
-1. the final 60,000-frame structured soak;
-2. final public audit, branch publication and pull request.
+All six ordered Phase 3 gates are now complete. Publication audit, branch
+publication and pull request are release workflow rather than another hardware
+gate.
 
 Entities, PVS, water, sprites/models, platform/audio and engine integration
 remain outside this phase.
