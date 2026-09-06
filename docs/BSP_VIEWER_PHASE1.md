@@ -19,7 +19,7 @@ tested, reusable interfaces.
 | Native fixed-camera frame | Missing | Private bundle load, dynamic command slots, indexed flat draws, two-buffer drain and readback | Hardware `ps5log/1` gate and Remote Play visual capture passed |
 | Lightmap atlas | Missing | First-style RGB light samples packed into a deterministic guttered RGBA8 atlas with normalized per-vertex UVs | Synthetic pixel/range regressions, C bundle validation and deterministic private-map bake |
 | Base textures | Missing | Embedded BSP palettes decoded into separately pitched RGBA8 images plus one checked GFX1013 base/lightmap descriptor table per texture | Palette/fallback regressions, exact descriptor words, corrupt-view rejection and deterministic private-map bake |
-| Native base x lightmap | Missing | Two-sampler GFX1013 pipeline, per-draw descriptor-table binding and 60,000-frame textured soak | Exact packet/layout tests, fail-closed evidence validator and signed native build; hardware gate pending |
+| Native base x lightmap | Missing | Two-sampler GFX1013 pipeline, per-draw descriptor-table binding and 60,000-frame textured soak | Exact packet/layout tests, signed native build and independently validated hardware gate |
 
 ## Gate 1 execution
 
@@ -265,6 +265,35 @@ all 100 controller heartbeats, 60,000-frame terminal telemetry, descriptor and
 sampler contract, readback visibility and clean structured shutdown. Hardware
 results and the Remote Play capture are recorded only after the signed artifact
 passes that validator.
+
+## Gate 5 hardware evidence
+
+The independently archived run
+`20260906T104934442Z_PPSA99997_ps5-agc-gears_0x57b1c21d2219` passed on GFX1013
+firmware 12.02 from source commit `c475eda`:
+
+- signed `eboot.bin` SHA-256:
+  `ba036e2c57a1ae5cd91a40998fe0eba5813b91db7ad90bac5d9abf3c335706d5`;
+- private bundle SHA-256
+  `ef9661dbfaad03bcefef4e07707ebc21cc8a13812a7e63bc8e58a408ae8ab42b`,
+  7,056,384 bytes, 164 textures, 3,936 descriptor DWORDs and 3,611 map
+  draws;
+- 60,000 completed frames and connected pad samples, with zero renderer and
+  pad-read errors and zero over-budget present intervals; maximum observed
+  interval 16,832,445 ns;
+- exact VideoOut token bookends, intact guards and matching full-buffer
+  readbacks `969a0a5018875c8b`, each with 1,920,454 visible pixels;
+- `BSP_TEXTURED_SOAK_COMPLETE` and a clean
+  `bsp-textured-soak-complete` BYE after 1,115 contiguous records. The
+  fail-closed validator reported log SHA-256
+  `091707cbcf4b3fe31c0bb9a7134dfddeb6de14c23ffcb06d428f412e7a2ed3eb`.
+
+The final direct-window capture remains in the ignored private evidence tree
+and has SHA-256
+`eb4d32fc9b55a4313e8ea9d90f7505528a2665b4b58adf42295ca699e7bed11e`.
+It visibly shows the textured and lightmapped reference corridor with
+editor-only `aaatrigger` surfaces omitted. The console title was then closed by
+exact identity; Chiaki and all development services remained running.
 
 ### Remote Play / DualSense handoff
 
