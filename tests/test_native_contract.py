@@ -7,11 +7,6 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
     source = (ROOT / "native/main.c").read_text(encoding="utf-8")
     builder = (ROOT / "tools/build_native.sh").read_text(encoding="utf-8")
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    assets = (ROOT / "native/shader_assets.S").read_text(encoding="utf-8")
-    bsp_metadata = (ROOT / "tools/generate_bsp_build_metadata.py").read_text(
-        encoding="utf-8"
-    )
     required = (
         '"LOG_SCHEMA=3"',
         '"LOG_TRANSPORT=ps5log/1 tcp structured"',
@@ -41,113 +36,6 @@ def main() -> None:
                      "deadline_misses"):
         if obsolete in source or obsolete in builder:
             raise SystemExit(f"production runtime still contains test policy: {obsolete}")
-    for item in ('bsp_flat_shader_metadata.h',
-                 'bsp_textured_shader_metadata.h'):
-        if item not in makefile:
-            raise SystemExit(f"BSP shader metadata build product missing: {item}")
-    for item in ('bsp_flat.gs.bin', 'bsp_flat.ps.bin',
-                 'bsp_textured.gs.bin', 'bsp_textured.ps.bin'):
-        if item not in assets:
-            raise SystemExit(f"BSP shader native asset missing: {item}")
-    for item in ('bsp-inspect', 'generate_bsp_build_metadata.py',
-                 '-DPS5_BSP_VIEWER=1', 'map.ps5bsp'):
-        if item not in builder:
-            raise SystemExit(f"BSP private release contract missing: {item}")
-    if 'PS5_BSP_BUNDLE_SHA256' not in bsp_metadata:
-        raise SystemExit("BSP bundle SHA-256 metadata contract missing")
-    for item in (
-        '"/app0/map.ps5bsp"', 'BSP_BUNDLE_READY vertices=%u',
-        'bsp_flat_compose(', 'BSP_VIDEOOUT_TOKEN frame=%llu buffer=%u',
-        'BSP_READBACK_FNV64 buffer0=%016llx',
-        'BSP_GATE1_COMPLETE fixed_camera=true',
-        'BSP_GATE_FRAME_COUNT = 600u', 'bright_pixel_count(',
-        'geometry_visible=true tokens=exact guards=intact',
-    ):
-        if item not in source:
-            raise SystemExit(f"BSP native gate contract missing: {item}")
-    if "BSP viewer requires PS5LOG_DEV_CONF" not in builder:
-        raise SystemExit("BSP release must fail closed without TCP config")
-    for item in (
-        "BSP_NOCLIP requires BSP_BUNDLE",
-        "-DPS5_BSP_NOCLIP=1",
-        "src/bsp_noclip.c",
-        "src/bsp_texture_descriptor.c",
-    ):
-        if item not in builder:
-            raise SystemExit(f"BSP noclip native build contract missing: {item}")
-    for item in (
-        "BSP_GATE_FRAME_COUNT = 10000u",
-        "scePadReadState(",
-        "bsp_noclip_step(",
-        "bsp_flat_update_camera(",
-        "BSP_NOCLIP_PAD_READY sticks=dual triggers=vertical",
-        "BSP_LOOP_BEGIN mode=noclip-soak",
-        "BSP_NOCLIP_SOAK_COMPLETE frames=%llu",
-        "BSP_NOCLIP_MIN_MOVING_FRAMES = 600u",
-        "BSP_NOCLIP_MIN_LOOKING_FRAMES = 120u",
-        'ps5log_close("bsp-noclip-soak-complete")',
-    ):
-        if item not in source:
-            raise SystemExit(f"BSP noclip runtime contract missing: {item}")
-    if "bsp-noclip-native-release" not in makefile or "BSP_NOCLIP=1" not in makefile:
-        raise SystemExit("BSP noclip release target missing")
-    for item in (
-        "BSP_TEXTURED requires BSP_NOCLIP=1",
-        "-DPS5_BSP_TEXTURED=1",
-        "src/bsp_textured_draw.c",
-    ):
-        if item not in builder:
-            raise SystemExit(f"BSP textured native build contract missing: {item}")
-    for item in (
-        "BSP_GATE_FRAME_COUNT = 60000u",
-        "bsp_runtime_plan_textured(",
-        "bsp_texture_build_tables(",
-        "bsp_textured_compose(",
-        "BSP_TEXTURED_BOOT schema=1 target=gfx1013",
-        "composition=base_x_lightmap",
-        "BSP_TEXTURE_TABLES_READY textures=%u descriptor_dwords=%u",
-        "BSP_LOOP_BEGIN mode=textured-noclip-soak",
-        "BSP_TEXTURED_READBACK buffer0=%016llx buffer1=%016llx",
-        "BSP_TEXTURED_SOAK_COMPLETE frames=%llu connected_frames=%llu",
-        "textured-render-or-input-continuity-gate-failure",
-        'ps5log_close("bsp-textured-soak-complete")',
-    ):
-        if item not in source:
-            raise SystemExit(f"BSP textured runtime contract missing: {item}")
-    if ("bsp-textured-native-release" not in makefile or
-            "BSP_TEXTURED=1" not in makefile):
-        raise SystemExit("BSP textured release target missing")
-    for item in (
-        "BSP_RESOURCE_FOUNDATION requires BSP_TEXTURED=1",
-        "-DPS5_RESOURCE_FOUNDATION=1",
-        "src/bsp_resource_frame.c", "src/bsp_resource_draw.c",
-        "src/ps5_resource_pool.c", "src/ps5_transient_ring.c",
-        "src/ps5_cache_contract.c",
-    ):
-        if item not in builder:
-            raise SystemExit(f"resource-foundation native build contract missing: {item}")
-    for item in (
-        "BSP_RESOURCE_BOOT schema=1 target=gfx1013",
-        "RESOURCE_HEAP_READY bytes=%llu allocations=4",
-        "overlay_depth=disabled",
-        "RESOURCE_FRAME_READY frame=%llu slot=%u",
-        "RESOURCE_FRAME_SEALED frame=%llu slot=%u token=%llu",
-        "RESOURCE_FRAME_SUBMITTED frame=%llu slot=%u token=%llu",
-        "RESOURCE_FRAME_RETIRED frame=%llu slot=%u token=%llu",
-        "RESOURCE_RING_RETIRED slots=2 reusable=%s tokens=exact",
-        "BSP_RESOURCE_SOAK_COMPLETE frames=%llu connected_frames=%llu",
-        "RESOURCE_POOL_RETIRED token=%llu reclaimed=%u",
-        'ps5log_close("bsp-resource-soak-complete")',
-    ):
-        if item not in source:
-            raise SystemExit(f"resource-foundation runtime contract missing: {item}")
-    for item in ('bsp_resource.gs.bin', 'bsp_resource.ps.bin',
-                 'bsp_overlay.gs.bin', 'bsp_overlay.ps.bin'):
-        if item not in assets:
-            raise SystemExit(f"resource-foundation shader asset missing: {item}")
-    if ("bsp-resource-native-release" not in makefile or
-            "BSP_RESOURCE_FOUNDATION=1" not in makefile):
-        raise SystemExit("resource-foundation release target missing")
     print("native telemetry and teardown source contract passed")
 
 

@@ -31,9 +31,6 @@ uint32_t *sceAgcCbSetShRegisterRangeDirect(
     uint32_t count);
 uint32_t *sceAgcDcbDrawIndexAuto(
     void *writer, uint32_t vertex_count, uint64_t modifier);
-uint32_t *sceAgcDcbDrawIndex(
-    void *writer, uint32_t index_count, const void *gpu_index_address,
-    uint64_t modifier);
 uint32_t *sceAgcDcbSetFlip(
     void *writer, uint32_t video_handle, int32_t buffer_index,
     uint32_t flip_mode, int64_t flip_arg);
@@ -42,9 +39,6 @@ uint32_t *sceAgcDcbDmaData(
     uint64_t destination, uint32_t src_select, uint32_t arg7,
     uint64_t source_or_immediate, uint32_t byte_count,
     uint32_t raw_wait, uint32_t disable_write_confirm, uint32_t cp_sync);
-uint32_t *sceAgcDcbAcquireMem(
-    void *writer, uint8_t engine, uint32_t cb_db_op, uint32_t gcr_control,
-    const volatile void *base, uint64_t size_bytes, uint32_t poll_cycles);
 
 static inline uint32_t *ps5_agc_dcb_fill_l2_sync(
     void *writer, void *gpu_destination, uint32_t repeated_word,

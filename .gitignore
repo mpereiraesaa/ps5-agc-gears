@@ -9,10 +9,6 @@ release/
 *.prx
 *.self
 __pycache__/
-*.bsp
-*.wad
-*.ps5bsp
-private/
 
 # Private research never belongs in this repository.
 captures/

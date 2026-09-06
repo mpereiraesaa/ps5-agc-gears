@@ -5,52 +5,6 @@ They are not compatibility claims for other firmware or consoles. Run logs and
 captures live in the private parent laboratory; this public boundary records
 only sanitized identifiers, hashes, outcomes and known limitations.
 
-## Phase 2 resource-foundation status
-
-Phase 2 passed its complete 60,000-frame FW 12.02 hardware gate:
-
-- Run: `20260906T130036578Z_PPSA99997_ps5-agc-gears_0x5ed84765862b`
-- Native ELF SHA-256:
-  `1a1f33e840d919f090accce6d4a5593044058c0f32386a2986cd2715e64b050c`
-- Signed fSELF SHA-256:
-  `695a5db926fc36e4d246c866e2d47cb0de8bd55904d495c1bf646f16c211e756`
-- Private `c1a0` bundle SHA-256/bytes:
-  `ef9661dbfaad03bcefef4e07707ebc21cc8a13812a7e63bc8e58a408ae8ab42b` /
-  7,056,384
-- Transcript SHA-256:
-  `8a7b8ce9aa03552f92c1717ff7bb4d836b616a8b399cf938951ac21f21e4c66e`
-- Server manifest SHA-256:
-  `2a74e4467910b3bfd8da268582925f508f1dc7b86285f5496e1a37b5f5ce2bcb`
-- Requested/completed/connected: 60,000/60,000/60,000
-- Resource pipelines/heap allocations: 2/4
-- BSP textures/descriptor DWORDs: 164/3,936
-- GPU fences: zero before reuse
-- VideoOut tokens: exact; final token `72567767493216`
-- Transient slots: both reusable after exact completion
-- Persistent allocations reclaimed: 4
-- Color/depth guards: intact
-- Pad read, present-budget and renderer errors: 0/0/0
-- Final readbacks: `a00b1153259458f4` and `5a5954a5f43f9ee8`
-- Teardown: gap-free BYE at sequence 1,127, followed by exact-title BigApp
-  closure and four healthy payload services
-- Device span: approximately 1,001.120 seconds
-
-`tools/validate_bsp_resource_evidence.py` accepted the immutable server
-manifest against the exact private bundle identity. Two Remote Play captures
-of the transient overlay have SHA-256 values
-`41b72ff3eed6f8fee5f5558f2af0735b1b03cfdb9807f4a25dbee5e891ba64a5`
-and `07dc2971b8fcfdc2570f03c80612393d110dfc9c23ad63216434fb3ee68bb1c6`;
-their map region is byte-identical while the overlay green mean changes by
-approximately 30.2 levels. The operator also confirmed the pulse live. The
-representative full-frame capture SHA-256 is
-`4554e6cc8b1d0a610016bcb96080ac46cc61246de3c46032e80ebe658ec959b6`.
-Captures remain private because they include game material.
-
-The gate reused the already proven noclip input path only for
-connected/read-error continuity. It did not require another DualSense movement
-or Remote Play handoff, and Chiaki used its existing registered console entry.
-See `BSP_RESOURCE_FOUNDATION_PHASE2.md` for the exact resource contract.
-
 ## Continuous production-runtime evidence
 
 The production lifecycle has no frame limit and is closed by the PS5
