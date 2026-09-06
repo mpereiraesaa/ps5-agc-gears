@@ -26,8 +26,8 @@ def make_evidence(directory: Path) -> Path:
         connected = frame + 1
         messages.append(
             "BSP_NOCLIP_INPUT "
-            f"frame={frame} connected={connected} moving={connected} looking={connected} "
-            f"distance_milli={connected * 1000} changes={connected} hash={'2' * 16} read_errors=0"
+            f"frame={frame} connected={connected} moving=0 looking=0 "
+            f"distance_milli=0 changes=0 hash={'2' * 16} read_errors=0"
         )
     messages += [
         "BSP_VIDEOOUT_TOKEN frame=59999 buffer=1 expected=101 observed=101 exact=true",
@@ -36,8 +36,8 @@ def make_evidence(directory: Path) -> Path:
         "present_interval_over_budget=0 errors=0 terminal=0",
         "BSP_TEXTURED_READBACK buffer0=3333333333333333 buffer1=5555555555555555 "
         "bytes=64 bright_pixels0=1 bright_pixels1=1 guards=intact frames=60000 errors=0",
-        "BSP_TEXTURED_SOAK_COMPLETE frames=60000 connected_frames=60000 moving_frames=60000 "
-        "looking_frames=60000 distance_milli=60000000 input_changes=60000 "
+        "BSP_TEXTURED_SOAK_COMPLETE frames=60000 connected_frames=60000 moving_frames=0 "
+        "looking_frames=0 distance_milli=0 input_changes=0 "
         "input_hash=4444444444444444 read_errors=0 textures=164 descriptor_dwords=3936 "
         "composition=base_x_lightmap tokens=exact guards=intact errors=0",
     ]
@@ -98,6 +98,7 @@ def main() -> int:
         summary = json.loads(valid.stdout)
         assert summary["frames"] == 60_000
         assert summary["textures"] == 164
+        assert summary["moving_frames"] == 0
 
         data = json.loads(manifest.read_text())
         log_path = directory / data["log_path"]

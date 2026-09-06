@@ -210,13 +210,18 @@ def validate(
 
     complete = one(messages, "BSP_TEXTURED_SOAK_COMPLETE")
     exact = {"frames": 60_000, "connected_frames": 60_000}
-    minimum = {"moving_frames": 600, "looking_frames": 120, "distance_milli": 100_000}
     for key, value in exact.items():
         if as_int(complete, key) != value:
             fail(f"completion threshold failed: {key}")
-    for key, value in minimum.items():
-        if as_int(complete, key) < value:
-            fail(f"completion threshold failed: {key}")
+    final_input = {
+        "moving_frames": "moving",
+        "looking_frames": "looking",
+        "distance_milli": "distance_milli",
+        "input_changes": "changes",
+    }
+    for completion_key, heartbeat_key in final_input.items():
+        if as_int(complete, completion_key) != previous[heartbeat_key]:
+            fail(f"completion/input counter mismatch: {completion_key}")
     if (as_int(complete, "read_errors") != 0 or
             as_int(complete, "errors") != 0):
         fail("completion reports errors")

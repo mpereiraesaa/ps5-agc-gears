@@ -109,6 +109,7 @@ def main() -> None:
         "BSP_LOOP_BEGIN mode=textured-noclip-soak",
         "BSP_TEXTURED_READBACK buffer0=%016llx buffer1=%016llx",
         "BSP_TEXTURED_SOAK_COMPLETE frames=%llu connected_frames=%llu",
+        "textured-render-or-input-continuity-gate-failure",
         'ps5log_close("bsp-textured-soak-complete")',
     ):
         if item not in source:

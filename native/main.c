@@ -1259,23 +1259,29 @@ int main(void)
         (unsigned long long)run.frames_completed,
         (unsigned long long)run.telemetry.errors);
 #endif
-    const int noclip_valid =
+    const int input_continuity_valid =
         run.telemetry.errors == 0u &&
         run.telemetry.present_interval_over_budget == 0u &&
         renderer.pad_read_errors == 0u &&
         renderer.noclip.sampled_frames == BSP_GATE_FRAME_COUNT &&
-        renderer.noclip.connected_frames == BSP_GATE_FRAME_COUNT &&
+        renderer.noclip.connected_frames == BSP_GATE_FRAME_COUNT;
+#ifdef PS5_BSP_TEXTURED
+    const int textured_valid =
+        input_continuity_valid &&
+        first_bright != 0u && second_bright != 0u &&
+        renderer.bsp_plan.descriptor_table_dwords ==
+            renderer.bsp_bundle.texture_count * BSP_TEXTURE_TABLE_DWORDS;
+    if (!textured_valid)
+        park("textured-render-or-input-continuity-gate-failure");
+#else
+    const int noclip_valid =
+        input_continuity_valid &&
         renderer.noclip.moving_frames >= BSP_NOCLIP_MIN_MOVING_FRAMES &&
         renderer.noclip.looking_frames >= BSP_NOCLIP_MIN_LOOKING_FRAMES &&
-        renderer.noclip.distance_travelled >= 100.0f
-#ifdef PS5_BSP_TEXTURED
-        && first_bright != 0u && second_bright != 0u &&
-        renderer.bsp_plan.descriptor_table_dwords ==
-            renderer.bsp_bundle.texture_count * BSP_TEXTURE_TABLE_DWORDS
-#endif
-        ;
+        renderer.noclip.distance_travelled >= 100.0f;
     if (!noclip_valid)
         park("noclip-input-or-movement-gate-failure");
+#endif
 #ifdef PS5_BSP_TEXTURED
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_TEXTURED_SOAK_COMPLETE frames=%llu connected_frames=%llu "

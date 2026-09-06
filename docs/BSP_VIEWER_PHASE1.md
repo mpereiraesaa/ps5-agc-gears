@@ -19,7 +19,7 @@ tested, reusable interfaces.
 | Native fixed-camera frame | Missing | Private bundle load, dynamic command slots, indexed flat draws, two-buffer drain and readback | Hardware `ps5log/1` gate and Remote Play visual capture passed |
 | Lightmap atlas | Missing | First-style RGB light samples packed into a deterministic guttered RGBA8 atlas with normalized per-vertex UVs | Synthetic pixel/range regressions, C bundle validation and deterministic private-map bake |
 | Base textures | Missing | Embedded BSP palettes decoded into separately pitched RGBA8 images plus one checked GFX1013 base/lightmap descriptor table per texture | Palette/fallback regressions, exact descriptor words, corrupt-view rejection and deterministic private-map bake |
-| Native base x lightmap | Missing | Two-sampler GFX1013 pipeline, per-draw descriptor-table binding and 60,000-frame noclip gate | Exact packet/layout tests, fail-closed evidence validator and signed native build; hardware gate pending |
+| Native base x lightmap | Missing | Two-sampler GFX1013 pipeline, per-draw descriptor-table binding and 60,000-frame textured soak | Exact packet/layout tests, fail-closed evidence validator and signed native build; hardware gate pending |
 
 ## Gate 1 execution
 
@@ -243,12 +243,15 @@ one immutable binding pointer per scene draw, command slots sized from that
 32-DWORD stride, and a trailing guard.
 
 The hardware gate requires 60,000 completed frames and connected DualSense
-samples, at least 600 translating frames, 120 looking frames and 100 units of
-travel. It additionally requires exact VideoOut token bookends, zero renderer,
-pad and present-budget errors, intact guards, visible pixels in both final
-render targets, matching texture/descriptor cardinality and a clean
-`bsp-textured-soak-complete` BYE. The two final hashes need not be equal because
-the camera remains live throughout the soak.
+samples. Movement thresholds are not repeated here: Gate 2 already proves the
+same noclip and ScePad path with 2,018 translating frames, 678 looking frames
+and a clean 10,000-frame completion. Gate 5 instead isolates the changed
+textured command stream. It requires exact VideoOut token bookends, zero
+renderer, pad and present-budget errors, intact guards, visible pixels in both
+final render targets, matching texture/descriptor cardinality and a clean
+`bsp-textured-soak-complete` BYE. Motion counters remain monotonic telemetry and
+the validator checks that completion matches the final input heartbeat, but
+their values may be zero during an unattended graphics soak.
 
 Private evidence is checked with:
 
@@ -274,10 +277,11 @@ a `Session has quit` dialog until the operator clicks `OK`; only then does the
 stream window close. The main Chiaki client remains open and can start a new
 stream through the existing registered console entry.
 
-Consequently, visual capture and physical-controller exercise are deliberately
-sequential: inspect or capture through the stream, let the operator take the
-DualSense and judge the remaining soak through `ps5log/1`, acknowledge the
-disconnect dialog, then restart streaming from the main client if another
-image is required. Automation must not assume that session disconnection
-implies window disappearance or dismiss the operator-visible dialog without an
-explicit request. This workflow never pairs, re-registers or synthesizes input.
+Gate 2 uses this handoff to prove physical-controller movement. Gate 5 does not
+repeat it: inspect or capture the textured frame through the stream and leave
+the connected pad neutral while `ps5log/1` judges the unattended graphics
+soak. If the operator does take over physically, acknowledge the disconnect
+dialog before restarting from the main client. Automation must not assume that
+session disconnection implies window disappearance or dismiss the
+operator-visible dialog without an explicit request. This workflow never
+pairs, re-registers or synthesizes input.
