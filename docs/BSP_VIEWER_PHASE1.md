@@ -172,8 +172,7 @@ resources together.
 
 ## Gate 4 base-texture descriptor-table contract
 
-The original Phase 1 baker decoded mip level zero from each embedded GoldSrc
-`miptex` and its
+The baker decodes mip level zero from each embedded GoldSrc `miptex` and its
 256-entry RGB palette. Names beginning with `{` map palette index 255 to zero
 alpha. WAD-only or absent texture payloads remain renderable through a
 deterministic magenta checkerboard carrying an explicit fallback flag; the
@@ -187,8 +186,7 @@ from geometry, lightmap packing and draw emission. GoldSrc uses them to mark
 invisible trigger, collision and compiler volumes; drawing them would expose
 their deliberately conspicuous 16x16 editor artwork in the game world.
 
-Bundle ABI version 2 used one 32-byte `TEXM` image entry per original texture
-and `TEXP` stored
+`TEXM` records one 32-byte image entry per original texture and `TEXP` stores
 the corresponding RGBA8 rows. Every image begins at a 256-byte boundary and
 every row pitch is a multiple of 256 bytes. Images remain separate rather than
 being packed into an atlas, preserving GoldSrc's repeated base UVs. The C
@@ -205,8 +203,7 @@ AMD headers are not published; the field positions are the narrow independently
 reviewable subset of Mesa's MIT-licensed `ac_descriptors.c` and
 `gfx10-rsrc.json` definitions.
 
-At the Phase 1 checkpoint the private reference map baked reproducibly to
-7,056,384 bytes with 164
+The private reference map now bakes reproducibly to 7,056,384 bytes with 164
 base textures occupying 4,780,032 pitched bytes and requiring 3,936 descriptor
 DWORDs. Its 84 `aaatrigger` faces are omitted, leaving 16,893 vertices, 29,013
 indices and 3,611 map draws. Two independent bakes produced SHA-256
@@ -214,11 +211,6 @@ indices and 3,611 map draws. Two independent bakes produced SHA-256
 This gate establishes base-image decoding and descriptor-table construction;
 the next gate consumes those tables in the native `base * lightmap` pipeline
 and carries the changed command stream through the 60,000-frame soak.
-
-Phase 3 supersedes this one-level storage contract with bundle ABI version 3:
-each image record carries a deterministic complete mip count and `TEXP` stores
-the chain in GFX10 linear smallest-to-base order with 256-byte row pitches.
-The historical Phase 1 hashes above remain evidence for the version-2 gate.
 
 ## Gate 5 base x lightmap native contract
 

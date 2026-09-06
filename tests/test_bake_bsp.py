@@ -100,11 +100,11 @@ def main() -> int:
     second = BAKER.bake(source)
     assert first == second
     assert hashlib.sha256(first).hexdigest() == (
-        "b68cba3218caa281f596f683e8cd5ba019a939b937bfc068f6d97b1a83811476"
+        "1e3177a7f64310b5b08bd633b8371f9c21206b5c93bb4b1d9812721bc9a59bc3"
     )
 
     header = BAKER.BUNDLE_HEADER.unpack_from(first)
-    assert header[0] == BAKER.BUNDLE_MAGIC and header[1] == 3
+    assert header[0] == BAKER.BUNDLE_MAGIC and header[1] == 2
     assert header[3] == len(first) and header[11] == 7
     assert header[5:8] == (32.0, 36.0, -16.0)
     assert abs(header[8]) < 1e-6 and abs(header[9]) < 1e-6
@@ -117,7 +117,7 @@ def main() -> int:
     assert directory[b"LMHD"][2:] == (1, BAKER.IMAGE.size)
     assert directory[b"LMPX"][2:] == (448, 4)
     assert directory[b"TEXM"][2:] == (1, BAKER.TEXTURE.size)
-    assert directory[b"TEXP"][2:] == (32512, 1)
+    assert directory[b"TEXP"][2:] == (16384, 1)
     assert directory[b"LMPX"][0] % 256 == 0
     assert directory[b"TEXP"][0] % 256 == 0
     vertex_offset = directory[b"VERT"][0]
@@ -133,16 +133,12 @@ def main() -> int:
     assert light_header == (64, 7, 256, BAKER.IMAGE_FORMAT_RGBA8_UNORM)
     texture_header = BAKER.TEXTURE.unpack_from(first, directory[b"TEXM"][0])
     assert texture_header == (
-        0, 32512, 64, 64, 256, BAKER.IMAGE_FORMAT_RGBA8_UNORM,
+        0, 16384, 64, 64, 256, BAKER.IMAGE_FORMAT_RGBA8_UNORM,
         BAKER._fnv1a32(b"{TEST"), BAKER.TEXTURE_FLAG_TRANSPARENT,
-        7, 0, 0, 0,
     )
     texture_at = directory[b"TEXP"][0]
-    # AddrLib linear order is mip6..mip0.  Mip0 begins after 16,128 bytes.
-    assert first[texture_at:texture_at + 4] == bytes((128, 128, 128, 254))
-    mip0_at = texture_at + 16128
-    assert first[mip0_at:mip0_at + 4] == bytes((0, 1, 255, 255))
-    assert first[mip0_at + 255 * 4:mip0_at + 256 * 4] == \
+    assert first[texture_at:texture_at + 4] == bytes((0, 1, 255, 255))
+    assert first[texture_at + 255 * 4:texture_at + 256 * 4] == \
         bytes((255, 0, 0, 0))
 
     texture_lump_offset = struct.unpack_from(
@@ -156,15 +152,6 @@ def main() -> int:
         external_bundle, external_directory[b"TEXM"][0])
     assert external_texture[7] == (BAKER.TEXTURE_FLAG_TRANSPARENT |
                                     BAKER.TEXTURE_FLAG_FALLBACK)
-
-    sky = bytearray(source)
-    sky[texture_lump_offset + 8:texture_lump_offset + 24] = \
-        struct.pack("<16s", b"sky")
-    sky_bundle = BAKER.bake(bytes(sky))
-    sky_directory = chunks(sky_bundle)
-    sky_texture = BAKER.TEXTURE.unpack_from(
-        sky_bundle, sky_directory[b"TEXM"][0])
-    assert sky_texture[7] == BAKER.TEXTURE_FLAG_SKY
 
     nodraw = bytearray(source)
     nodraw[texture_lump_offset + 8:texture_lump_offset + 24] = \

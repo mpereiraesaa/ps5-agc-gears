@@ -33,15 +33,12 @@ visible and reproducible.
 | Runtime | Continuous until the user selects **Close Game** |
 | Observability | Structured TCP telemetry, heartbeats and immutable run manifests |
 
-The strongest finite reference is the complete Phase 3 texture path running
-uninterrupted for 60,000 frames on one PS5 with firmware 12.02. It completed
-with deterministic mip chains, bounded dynamic-lightmap uploads, separate
-opaque/alpha-test/sky passes, exact residency/upload accounting, zero renderer
-errors and a clean teardown. The Phase 2 resource-foundation build separately
-passed 60,000 frames with exact transient retirement, all four persistent
-allocations reclaimed and its animated overlay confirmed in Remote Play.
-Continuous-mode hardware runs reached 25,560 completed frames before operator
-closure. See
+The strongest finite reference is an uninterrupted 60,000-frame run on one
+PS5 with firmware 12.02. It completed with zero renderer errors and a clean
+teardown. The Phase 2 resource-foundation build separately passed 60,000 frames
+with exact transient retirement, all four persistent allocations reclaimed and
+its animated overlay confirmed in Remote Play. Continuous-mode hardware runs
+reached 25,560 completed frames before operator closure. See
 [`docs/HARDWARE_VALIDATION.md`](docs/HARDWARE_VALIDATION.md) for the precise
 evidence boundary.
 

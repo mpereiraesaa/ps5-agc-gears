@@ -34,12 +34,6 @@ bsp_bundle=${BSP_BUNDLE:-}
 bsp_noclip=${BSP_NOCLIP:-0}
 bsp_textured=${BSP_TEXTURED:-0}
 bsp_resource=${BSP_RESOURCE_FOUNDATION:-0}
-bsp_texture_path=${BSP_TEXTURE_PATH:-0}
-bsp_texture_mip_gate=${BSP_TEXTURE_MIP_GATE:-0}
-bsp_texture_alpha_gate=${BSP_TEXTURE_ALPHA_GATE:-0}
-bsp_texture_sky_gate=${BSP_TEXTURE_SKY_GATE:-0}
-bsp_texture_accounting_gate=${BSP_TEXTURE_ACCOUNTING_GATE:-0}
-bsp_texture_final_gate=${BSP_TEXTURE_FINAL_GATE:-0}
 dev_conf=${PS5LOG_DEV_CONF:-$root/dev.conf}
 bsp_flags=()
 [[ $bsp_noclip == 0 || $bsp_noclip == 1 ]] || {
@@ -51,25 +45,6 @@ bsp_flags=()
 [[ $bsp_resource == 0 || $bsp_resource == 1 ]] || {
     echo "BSP_RESOURCE_FOUNDATION must be 0 or 1" >&2; exit 2;
 }
-[[ $bsp_texture_path == 0 || $bsp_texture_path == 1 ]] || {
-    echo "BSP_TEXTURE_PATH must be 0 or 1" >&2; exit 2;
-}
-[[ $bsp_texture_mip_gate == 0 || $bsp_texture_mip_gate == 1 ]] || {
-    echo "BSP_TEXTURE_MIP_GATE must be 0 or 1" >&2; exit 2;
-}
-[[ $bsp_texture_alpha_gate == 0 || $bsp_texture_alpha_gate == 1 ]] || {
-    echo "BSP_TEXTURE_ALPHA_GATE must be 0 or 1" >&2; exit 2;
-}
-[[ $bsp_texture_sky_gate == 0 || $bsp_texture_sky_gate == 1 ]] || {
-    echo "BSP_TEXTURE_SKY_GATE must be 0 or 1" >&2; exit 2;
-}
-[[ $bsp_texture_accounting_gate == 0 ||
-   $bsp_texture_accounting_gate == 1 ]] || {
-    echo "BSP_TEXTURE_ACCOUNTING_GATE must be 0 or 1" >&2; exit 2;
-}
-[[ $bsp_texture_final_gate == 0 || $bsp_texture_final_gate == 1 ]] || {
-    echo "BSP_TEXTURE_FINAL_GATE must be 0 or 1" >&2; exit 2;
-}
 if [[ $bsp_noclip == 1 && -z $bsp_bundle ]]; then
     echo "BSP_NOCLIP requires BSP_BUNDLE" >&2
     exit 2
@@ -80,36 +55,6 @@ if [[ $bsp_textured == 1 && $bsp_noclip != 1 ]]; then
 fi
 if [[ $bsp_resource == 1 && $bsp_textured != 1 ]]; then
     echo "BSP_RESOURCE_FOUNDATION requires BSP_TEXTURED=1" >&2
-    exit 2
-fi
-if [[ $bsp_texture_path == 1 && $bsp_resource != 1 ]]; then
-    echo "BSP_TEXTURE_PATH requires BSP_RESOURCE_FOUNDATION=1" >&2
-    exit 2
-fi
-if [[ $bsp_texture_mip_gate == 1 && $bsp_texture_path != 1 ]]; then
-    echo "BSP_TEXTURE_MIP_GATE requires BSP_TEXTURE_PATH=1" >&2
-    exit 2
-fi
-if [[ $bsp_texture_alpha_gate == 1 && $bsp_texture_path != 1 ]]; then
-    echo "BSP_TEXTURE_ALPHA_GATE requires BSP_TEXTURE_PATH=1" >&2
-    exit 2
-fi
-if [[ $bsp_texture_sky_gate == 1 && $bsp_texture_path != 1 ]]; then
-    echo "BSP_TEXTURE_SKY_GATE requires BSP_TEXTURE_PATH=1" >&2
-    exit 2
-fi
-if [[ $bsp_texture_accounting_gate == 1 && $bsp_texture_path != 1 ]]; then
-    echo "BSP_TEXTURE_ACCOUNTING_GATE requires BSP_TEXTURE_PATH=1" >&2
-    exit 2
-fi
-if [[ $bsp_texture_final_gate == 1 && $bsp_texture_path != 1 ]]; then
-    echo "BSP_TEXTURE_FINAL_GATE requires BSP_TEXTURE_PATH=1" >&2
-    exit 2
-fi
-if ((bsp_texture_mip_gate + bsp_texture_alpha_gate +
-     bsp_texture_sky_gate + bsp_texture_accounting_gate +
-     bsp_texture_final_gate > 1)); then
-    echo "texture-path hardware gates are mutually exclusive" >&2
     exit 2
 fi
 if [[ -n $bsp_bundle ]]; then
@@ -134,24 +79,6 @@ if [[ -n $bsp_bundle ]]; then
     fi
     if [[ $bsp_resource == 1 ]]; then
         bsp_flags+=(-DPS5_RESOURCE_FOUNDATION=1)
-    fi
-    if [[ $bsp_texture_path == 1 ]]; then
-        bsp_flags+=(-DPS5_TEXTURE_PATH=1)
-    fi
-    if [[ $bsp_texture_mip_gate == 1 ]]; then
-        bsp_flags+=(-DPS5_TEXTURE_MIP_GATE=1)
-    fi
-    if [[ $bsp_texture_alpha_gate == 1 ]]; then
-        bsp_flags+=(-DPS5_TEXTURE_ALPHA_GATE=1)
-    fi
-    if [[ $bsp_texture_sky_gate == 1 ]]; then
-        bsp_flags+=(-DPS5_TEXTURE_SKY_GATE=1)
-    fi
-    if [[ $bsp_texture_accounting_gate == 1 ]]; then
-        bsp_flags+=(-DPS5_TEXTURE_ACCOUNTING_GATE=1)
-    fi
-    if [[ $bsp_texture_final_gate == 1 ]]; then
-        bsp_flags+=(-DPS5_TEXTURE_FINAL_GATE=1)
     fi
 fi
 
@@ -191,10 +118,7 @@ common=(-O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
 sources=(
     native/main.c native/ps5_agc_native.c
     src/bsp_bundle.c src/bsp_command_plan.c src/bsp_flat_draw.c
-    src/bsp_dynamic_lightmap.c src/bsp_alpha_test.c src/bsp_sky.c
-    src/bsp_texture_accounting.c
-    src/bsp_noclip.c
-    src/bsp_textured_draw.c
+    src/bsp_noclip.c src/bsp_textured_draw.c
     src/bsp_flat_scene.c src/bsp_runtime_plan.c src/bsp_texture_descriptor.c
     src/bsp_resource_frame.c src/bsp_resource_draw.c
     src/gears_animation.c src/gears_draw_compose.c src/gears_frame_runner.c

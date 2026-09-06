@@ -6,7 +6,7 @@
 enum {
     BUNDLE_HEADER_BYTES = 64,
     BUNDLE_CHUNK_BYTES = 32,
-    BUNDLE_VERSION = 3,
+    BUNDLE_VERSION = 2,
     MAX_CHUNKS = 64,
 };
 
@@ -21,75 +21,7 @@ typedef struct ChunkView {
 _Static_assert(sizeof(BspBundleVertex) == 32u, "bundle vertex ABI");
 _Static_assert(sizeof(BspBundleDraw) == 32u, "bundle draw ABI");
 _Static_assert(sizeof(BspBundleImage) == 16u, "bundle image ABI");
-_Static_assert(sizeof(BspBundleTexture) == 48u, "bundle texture ABI");
-
-static uint32_t align_u32(uint32_t value, uint32_t alignment)
-{
-    return (value + alignment - 1u) & ~(alignment - 1u);
-}
-
-static uint32_t full_mip_count(uint32_t width, uint32_t height)
-{
-    uint32_t count = 1u;
-    while (width > 1u || height > 1u) {
-        width = width > 1u ? width >> 1 : 1u;
-        height = height > 1u ? height >> 1 : 1u;
-        ++count;
-    }
-    return count;
-}
-
-int bsp_bundle_texture_mip_level(const BspBundleTexture *texture,
-                                 uint32_t level,
-                                 BspBundleMipLevel *out)
-{
-    if (!texture || !out || texture->width == 0u ||
-        texture->height == 0u || texture->width > 16384u ||
-        texture->height > 16384u || texture->mip_count == 0u ||
-        texture->mip_count > 15u || level >= texture->mip_count)
-        return -1;
-    uint64_t offset = 0u;
-    for (uint32_t candidate = texture->mip_count; candidate-- > 0u;) {
-        const uint32_t shifted_width = texture->width >> candidate;
-        const uint32_t shifted_height = texture->height >> candidate;
-        const uint32_t width = shifted_width ? shifted_width : 1u;
-        const uint32_t height = shifted_height ? shifted_height : 1u;
-        if (width > UINT32_MAX / 4u)
-            return -1;
-        const uint32_t row_pitch = align_u32(width * 4u, 256u);
-        const uint64_t bytes = (uint64_t)row_pitch * height;
-        if (candidate == level) {
-            if (offset > UINT32_MAX || bytes > UINT32_MAX)
-                return -1;
-            *out = (BspBundleMipLevel){
-                (uint32_t)offset, (uint32_t)bytes,
-                width, height, row_pitch,
-            };
-            return 0;
-        }
-        offset += bytes;
-        if (offset > UINT32_MAX)
-            return -1;
-    }
-    return -1;
-}
-
-static int texture_layout_valid(const BspBundleTexture *texture)
-{
-    if (!texture || texture->mip_count !=
-            full_mip_count(texture->width, texture->height) ||
-        texture->mip_count > 15u ||
-        texture->width > UINT32_MAX / 4u ||
-        texture->row_pitch != align_u32(texture->width * 4u, 256u) ||
-        texture->reserved[0] != 0u || texture->reserved[1] != 0u ||
-        texture->reserved[2] != 0u)
-        return 0;
-    BspBundleMipLevel base;
-    if (bsp_bundle_texture_mip_level(texture, 0u, &base) != 0)
-        return 0;
-    return base.offset <= UINT32_MAX - base.bytes &&
-           texture->bytes == base.offset + base.bytes;
-}
+_Static_assert(sizeof(BspBundleTexture) == 32u, "bundle texture ABI");
 
 static uint32_t load_u32(const uint8_t *at)
 {
@@ -237,16 +169,15 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
             const BspBundleTexture *const texture = &textures[index];
             if (texture->width == 0u || texture->height == 0u ||
                 texture->width > 16384u || texture->height > 16384u ||
-                !texture_layout_valid(texture) ||
+                texture->row_pitch < texture->width * 4u ||
+                (texture->row_pitch & 255u) != 0u ||
                 texture->format != BSP_BUNDLE_IMAGE_RGBA8_UNORM ||
                 (texture->flags & ~(BSP_BUNDLE_TEXTURE_TRANSPARENT |
                                     BSP_BUNDLE_TEXTURE_FALLBACK |
-                                    BSP_BUNDLE_TEXTURE_NODRAW |
-                                    BSP_BUNDLE_TEXTURE_SKY)) != 0u ||
-                ((texture->flags & BSP_BUNDLE_TEXTURE_SKY) != 0u &&
-                 (texture->flags & (BSP_BUNDLE_TEXTURE_TRANSPARENT |
-                                    BSP_BUNDLE_TEXTURE_NODRAW)) != 0u) ||
+                                    BSP_BUNDLE_TEXTURE_NODRAW)) != 0u ||
                 texture->name_hash == 0u ||
+                texture->height > UINT32_MAX / texture->row_pitch ||
+                texture->bytes != texture->height * texture->row_pitch ||
                 (texture->offset & 255u) != 0u ||
                 texture->offset > texture_pixels_chunk->bytes ||
                 texture->bytes > texture_pixels_chunk->bytes - texture->offset)

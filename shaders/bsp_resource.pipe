@@ -38,6 +38,8 @@ void main() {
         return;
     }
     vec4 base = texture(base_texture, base_uv);
+    if (base.a < 0.5)
+        discard;
     color = vec4(base.rgb * texture(lightmap_texture, light_uv).rgb, 1.0);
 }
 
