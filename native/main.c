@@ -308,7 +308,7 @@ static int prepare_bsp_scene(void)
         renderer.bsp_plan.vertex_srds_offset);
     BspBundleVertex *const clear_vertices = (BspBundleVertex *)(base +
         renderer.bsp_plan.clear_vertices_offset);
-    uint32_t *const clear_indices = (uint32_t *)(base +
+    uint16_t *const clear_indices = (uint16_t *)(base +
         renderer.bsp_plan.clear_indices_offset);
     BspFlatDraw *const draws = (BspFlatDraw *)(base +
         renderer.bsp_plan.scene_draws_offset);

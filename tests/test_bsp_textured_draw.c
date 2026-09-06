@@ -22,7 +22,7 @@ static int set_sh(uint32_t **cursor, uint32_t capacity, uint32_t offset,
 }
 
 static int draw_indexed(uint32_t **cursor, uint32_t capacity,
-                        uint32_t index_count, const uint32_t *indices,
+                        uint32_t index_count, const uint16_t *indices,
                         const void *mapping, size_t mapping_bytes,
                         uint64_t modifier)
 {
@@ -45,8 +45,8 @@ int main(void)
         (const uint32_t *)(gpu.bytes + 352u),
     };
     draws[0].index_count = draws[1].index_count = 3u;
-    draws[0].indices = (const uint32_t *)(gpu.bytes + 640u);
-    draws[1].indices = (const uint32_t *)(gpu.bytes + 656u);
+    draws[0].indices = (const uint16_t *)(gpu.bytes + 640u);
+    draws[1].indices = (const uint16_t *)(gpu.bytes + 648u);
     draws[0].sh_words[0] = 0x11111111u;
     draws[1].sh_words[0] = 0x22222222u;
     uint32_t required = 0u;

@@ -31,12 +31,12 @@ LUMP_EDGES = 12
 LUMP_SURFEDGES = 13
 
 BUNDLE_MAGIC = b"PS5BSP\0\0"
-BUNDLE_VERSION = 1
+BUNDLE_VERSION = 2
 BUNDLE_HEADER = struct.Struct("<8sIIII3f3f4I")
 CHUNK_HEADER = struct.Struct("<4sIIIIIII")
 VERTEX = struct.Struct("<3f2f2fI")
 DRAW = struct.Struct("<8I")
-INDEX = struct.Struct("<I")
+INDEX = struct.Struct("<H")
 IMAGE = struct.Struct("<4I")
 TEXTURE = struct.Struct("<8I")
 
@@ -45,6 +45,7 @@ MAX_OUTPUT_BYTES = 64 * 1024 * 1024
 MAX_DECODED_TEXTURE_BYTES = 48 * 1024 * 1024
 MAX_FACES = 1_000_000
 MAX_FACE_EDGES = 4096
+MAX_INDEXED_VERTICES = 1 << 16
 PLAYER_EYE_HEIGHT = 28.0
 ATLAS_MAX_DIMENSION = 2048
 ATLAS_GUTTER = 1
@@ -527,6 +528,8 @@ def bake(data: bytes) -> bytes:
     for face_index, (face, shape) in enumerate(zip(faces, geometry)):
         texture = texinfo[face.texinfo]
         width, height = texture_sizes[texture.miptex]
+        if emitted_vertices + len(shape.polygon) > MAX_INDEXED_VERTICES:
+            raise BakeError("renderable vertices exceed the uint16 index limit")
 
         first_index = emitted_indices
         placement = light_placements[face_index]

@@ -9,7 +9,7 @@ tested, reusable interfaces.
 | Gate 1 dependency | Baseline | Change in this branch | Host evidence |
 |---|---|---|---|
 | BSP v30 parsing | Missing | Deterministic host baker for entities, vertices, edges, surfedges, faces, texinfo and miptex dimensions | Synthetic four-edge face and malformed-input regressions |
-| Reproducible upload format | Missing | Versioned, checksummed `VERT`/`INDX`/`DRAW` bundle with fixed spawn camera | Pinned SHA-256 plus C consumer validation |
+| Reproducible upload format | Missing | Versioned, checksummed `VERT`/`INDX`/`DRAW` bundle with fixed spawn camera and uint16 indices | Pinned SHA-256 plus C consumer validation |
 | Z-up conversion | Missing | Baker emits right-handed Y-up positions and a forward vector | Exact spawn and direction assertions |
 | Static GPU allocation | Hard-coded offsets | Bounds-checked aligned bump allocator | Alignment, exhaustion and no-advance-on-failure tests |
 | Indexed AGC draw | ABI documented, unused | Six-DWORD checked writer with a full GPU-span guard | Synthetic builder cursor and visibility tests |
@@ -197,10 +197,10 @@ AMD headers are not published; the field positions are the narrow independently
 reviewable subset of Mesa's MIT-licensed `ac_descriptors.c` and
 `gfx10-rsrc.json` definitions.
 
-The private reference map now bakes reproducibly to 7,210,496 bytes with 164
+The private reference map now bakes reproducibly to 7,151,360 bytes with 164
 base textures occupying 4,780,032 pitched bytes and requiring 3,936 descriptor
 DWORDs. Two independent bakes produced SHA-256
-`33242fe611a896f8f26461f297e0f05f31c026a3ce0eab614d2e63f401a227d5`.
+`97678857960abbae8933dc4851ae0f11ba3aadb3b1b4dde6749d5fbaf9a089f6`.
 This gate establishes base-image decoding and descriptor-table construction;
 the next gate consumes those tables in the native `base * lightmap` pipeline
 and carries the changed command stream through the 60,000-frame soak.
@@ -219,6 +219,14 @@ base image and binding 1 samples the clamped shared lightmap, both bilinearly,
 then writes `base.rgb * lightmap.rgb`. Palette-alpha texels below 0.5 are
 discarded. The synthetic clear draw uses an explicit control word and never
 samples map data.
+
+Bundle version 2 stores `INDX` as little-endian uint16 values and rejects maps
+whose emitted vertex count exceeds 65,536. `DRAW_INDEX_2` carries an address
+and count but not an index-width field; the preceding GFX10.3 command state is
+therefore matched explicitly by the compact index representation. Version 1's
+uint32 stream could be consumed as alternating `index, 0` uint16 values and
+visually produced long triangles converging on vertex zero even while command,
+fence and VideoOut telemetry remained valid.
 
 Each draw is exactly 32 command DWORDs: a 23-DWORD pre-raster parameter packet,
 a three-DWORD pixel descriptor-table-pointer packet and a six-DWORD indexed

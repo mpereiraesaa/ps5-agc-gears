@@ -94,7 +94,7 @@ int main(void)
                                     emit_draw) == PS5_AGC_WRITER_OK);
     assert(cursor == gpu.words + 9);
     assert(ps5_agc_writer_draw_index(
-               &cursor, 64u, 6u, gpu.words + 112u, gpu.words,
+               &cursor, 64u, 6u, (const uint16_t *)gpu.words + 250u, gpu.words,
                sizeof(gpu.words), UINT64_C(0x1234), emit_indexed) ==
            PS5_AGC_WRITER_OK);
     assert(cursor == gpu.words + 15);
@@ -114,7 +114,8 @@ int main(void)
            PS5_AGC_WRITER_NOT_GPU_VISIBLE);
     assert(cursor == gpu.words + 45);
     assert(ps5_agc_writer_draw_index(
-               &cursor, 64u, 6u, values, gpu.words, sizeof(gpu.words),
+               &cursor, 64u, 6u, (const uint16_t *)values, gpu.words,
+               sizeof(gpu.words),
                UINT64_C(0x1234), emit_indexed) ==
            PS5_AGC_WRITER_NOT_GPU_VISIBLE);
     assert(cursor == gpu.words + 45);

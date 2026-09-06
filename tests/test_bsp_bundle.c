@@ -17,6 +17,11 @@ static void put_u32(uint8_t *at, uint32_t value)
     memcpy(at, &value, sizeof(value));
 }
 
+static void put_u16(uint8_t *at, uint16_t value)
+{
+    memcpy(at, &value, sizeof(value));
+}
+
 static void put_f32(uint8_t *at, float value)
 {
     memcpy(at, &value, sizeof(value));
@@ -50,7 +55,7 @@ static void descriptor(uint8_t *data, unsigned index, const char tag[4],
 static void checksums(uint8_t *data)
 {
     descriptor(data, 0u, "VERT", VERTEX_OFFSET, 96u, 3u, 32u);
-    descriptor(data, 1u, "INDX", INDEX_OFFSET, 12u, 3u, 4u);
+    descriptor(data, 1u, "INDX", INDEX_OFFSET, 6u, 3u, 2u);
     descriptor(data, 2u, "DRAW", DRAW_OFFSET, 32u, 1u, 32u);
     put_u32(data + 20u, crc32_bytes(data + HEADER, FILE_BYTES - HEADER));
 }
@@ -59,7 +64,7 @@ static void make_bundle(uint8_t data[FILE_BYTES])
 {
     memset(data, 0, FILE_BYTES);
     memcpy(data, "PS5BSP\0\0", 8u);
-    put_u32(data + 8u, 1u);
+    put_u32(data + 8u, 2u);
     put_u32(data + 12u, HEADER);
     put_u32(data + 16u, FILE_BYTES);
     put_f32(data + 24u, 1.0f);
@@ -73,8 +78,9 @@ static void make_bundle(uint8_t data[FILE_BYTES])
     vertices[0].position[0] = 0.0f;
     vertices[1].position[0] = 1.0f;
     vertices[2].position[1] = 1.0f;
-    uint32_t *const indices = (uint32_t *)(data + INDEX_OFFSET);
-    indices[0] = 0u; indices[1] = 1u; indices[2] = 2u;
+    put_u16(data + INDEX_OFFSET, 0u);
+    put_u16(data + INDEX_OFFSET + 2u, 1u);
+    put_u16(data + INDEX_OFFSET + 4u, 2u);
     BspBundleDraw *const draw = (BspBundleDraw *)(data + DRAW_OFFSET);
     draw->index_count = 3u;
     draw->lightmap = UINT32_MAX;
@@ -84,7 +90,7 @@ static void make_bundle(uint8_t data[FILE_BYTES])
 static void light_checksums(uint8_t *data)
 {
     descriptor(data, 0u, "VERT", LIGHT_VERTEX_OFFSET, 96u, 3u, 32u);
-    descriptor(data, 1u, "INDX", LIGHT_INDEX_OFFSET, 12u, 3u, 4u);
+    descriptor(data, 1u, "INDX", LIGHT_INDEX_OFFSET, 6u, 3u, 2u);
     descriptor(data, 2u, "DRAW", LIGHT_DRAW_OFFSET, 32u, 1u, 32u);
     descriptor(data, 3u, "LMHD", LIGHT_IMAGE_OFFSET, 16u, 1u, 16u);
     descriptor(data, 4u, "LMPX", LIGHT_PIXELS_OFFSET, 256u, 64u, 4u);
@@ -98,7 +104,7 @@ static void make_light_bundle(uint8_t data[LIGHT_FILE_BYTES])
 {
     memset(data, 0, LIGHT_FILE_BYTES);
     memcpy(data, "PS5BSP\0\0", 8u);
-    put_u32(data + 8u, 1u);
+    put_u32(data + 8u, 2u);
     put_u32(data + 12u, LIGHT_HEADER);
     put_u32(data + 16u, LIGHT_FILE_BYTES);
     put_f32(data + 36u, 0.0f);
@@ -112,8 +118,9 @@ static void make_light_bundle(uint8_t data[LIGHT_FILE_BYTES])
     vertices[1].light_uv[0] = vertices[1].light_uv[1] = 0.5f;
     vertices[2].position[1] = 1.0f;
     vertices[2].light_uv[0] = vertices[2].light_uv[1] = 0.5f;
-    uint32_t *const indices = (uint32_t *)(data + LIGHT_INDEX_OFFSET);
-    indices[0] = 0u; indices[1] = 1u; indices[2] = 2u;
+    put_u16(data + LIGHT_INDEX_OFFSET, 0u);
+    put_u16(data + LIGHT_INDEX_OFFSET + 2u, 1u);
+    put_u16(data + LIGHT_INDEX_OFFSET + 4u, 2u);
     BspBundleDraw *const draw = (BspBundleDraw *)(data + LIGHT_DRAW_OFFSET);
     draw->index_count = 3u;
     draw->lightmap = 0u;
@@ -156,7 +163,7 @@ int main(void)
     storage.bytes[VERTEX_OFFSET] = saved;
     checksums(storage.bytes);
 
-    uint32_t *const indices = (uint32_t *)(storage.bytes + INDEX_OFFSET);
+    uint16_t *const indices = (uint16_t *)(storage.bytes + INDEX_OFFSET);
     indices[2] = 3u;
     checksums(storage.bytes);
     assert(bsp_bundle_open(storage.bytes, sizeof(storage.bytes), &view) ==

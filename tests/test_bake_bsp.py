@@ -100,11 +100,11 @@ def main() -> int:
     second = BAKER.bake(source)
     assert first == second
     assert hashlib.sha256(first).hexdigest() == (
-        "66085bfa081a974b410f303d05ceb4bb4ea106871328dadf132113f189ea2176"
+        "1e3177a7f64310b5b08bd633b8371f9c21206b5c93bb4b1d9812721bc9a59bc3"
     )
 
     header = BAKER.BUNDLE_HEADER.unpack_from(first)
-    assert header[0] == BAKER.BUNDLE_MAGIC and header[1] == 1
+    assert header[0] == BAKER.BUNDLE_MAGIC and header[1] == 2
     assert header[3] == len(first) and header[11] == 7
     assert header[5:8] == (32.0, 36.0, -16.0)
     assert abs(header[8]) < 1e-6 and abs(header[9]) < 1e-6
@@ -126,7 +126,7 @@ def main() -> int:
         0.2142857164144516, 0,
     )
     index_offset = directory[b"INDX"][0]
-    assert struct.unpack_from("<6I", first, index_offset) == (0, 1, 2, 0, 2, 3)
+    assert struct.unpack_from("<6H", first, index_offset) == (0, 1, 2, 0, 2, 3)
     draw_offset = directory[b"DRAW"][0]
     assert BAKER.DRAW.unpack_from(first, draw_offset)[:5] == (0, 6, 0, 0, 0)
     light_header = BAKER.IMAGE.unpack_from(first, directory[b"LMHD"][0])
@@ -162,6 +162,12 @@ def main() -> int:
     must_fail(bytes(outside), "outside the file")
     no_spawn = source.replace(b"info_player_start", b"info_player_wrong")
     must_fail(no_spawn, "no player spawn")
+    original_index_limit = BAKER.MAX_INDEXED_VERTICES
+    BAKER.MAX_INDEXED_VERTICES = 3
+    try:
+        must_fail(source, "uint16 index limit")
+    finally:
+        BAKER.MAX_INDEXED_VERTICES = original_index_limit
     bad_light = bytearray(source)
     face_offset = struct.unpack_from("<I", source,
                                      4 + BAKER.LUMP_FACES * 8)[0]

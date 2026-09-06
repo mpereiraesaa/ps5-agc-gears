@@ -63,7 +63,7 @@ static int plan_runtime(size_t bundle_bytes, uint32_t map_draw_count,
     }
     if (place(&cursor, 3u * sizeof(BspBundleVertex), 16u,
               &plan->clear_vertices_offset) != 0 ||
-        place(&cursor, 3u * sizeof(uint32_t), 16u,
+        place(&cursor, 3u * sizeof(uint16_t), 16u,
               &plan->clear_indices_offset) != 0 ||
         place(&cursor, (size_t)plan->scene_draw_count * sizeof(BspFlatDraw),
               16u, &plan->scene_draws_offset) != 0)

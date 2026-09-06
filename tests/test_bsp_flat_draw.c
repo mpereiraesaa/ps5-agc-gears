@@ -14,11 +14,11 @@ static int direct(uint32_t **cursor, uint32_t capacity, uint32_t offset,
 }
 
 static int indexed(uint32_t **cursor, uint32_t capacity, uint32_t count,
-                   const uint32_t *indices, const void *gpu_mapping,
+                   const uint16_t *indices, const void *gpu_mapping,
                    size_t gpu_mapping_bytes, uint64_t modifier)
 {
     assert(capacity >= 6u && count == 3u && indices && modifier == 5u);
-    assert(gpu_mapping && gpu_mapping_bytes == 9u * sizeof(uint32_t));
+    assert(gpu_mapping && gpu_mapping_bytes == 9u * sizeof(uint16_t));
     *cursor += behavior == 2u ? 5u : 6u;
     return 0;
 }
@@ -26,7 +26,7 @@ static int indexed(uint32_t **cursor, uint32_t capacity, uint32_t count,
 int main(void)
 {
     uint32_t commands[BSP_FLAT_DWORDS_PER_DRAW * 3] = {0};
-    uint32_t indices[9] = {0};
+    uint16_t indices[9] = {0};
     BspFlatDraw draws[3];
     memset(draws, 0, sizeof(draws));
     for (unsigned index = 0; index < 3u; ++index) {

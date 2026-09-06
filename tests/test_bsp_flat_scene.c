@@ -22,7 +22,7 @@ int main(void)
 {
     BspFlatDraw clear;
     BspBundleVertex clear_vertices[3];
-    uint32_t clear_indices[3];
+    uint16_t clear_indices[3];
     assert(bsp_flat_build_clear(&clear, clear_vertices, clear_indices,
                                 0x123400u) == 0);
     assert(clear.index_count == 3u && clear.indices == clear_indices);
@@ -38,7 +38,7 @@ int main(void)
     assert(clear_vertices[1].position[0] == 3.0f);
     assert(clear_vertices[2].position[1] == 3.0f);
 
-    const uint32_t indices[6] = {0, 1, 2, 2, 3, 0};
+    const uint16_t indices[6] = {0, 1, 2, 2, 3, 0};
     const BspBundleDraw source[2] = {
         {.first_index = 0, .index_count = 3, .face_id = 7},
         {.first_index = 3, .index_count = 3, .face_id = 8},

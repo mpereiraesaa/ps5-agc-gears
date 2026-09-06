@@ -6,7 +6,7 @@
 enum {
     BUNDLE_HEADER_BYTES = 64,
     BUNDLE_CHUNK_BYTES = 32,
-    BUNDLE_VERSION = 1,
+    BUNDLE_VERSION = 2,
     MAX_CHUNKS = 64,
 };
 
@@ -132,7 +132,7 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
     }
     if (!vertex_chunk || !index_chunk || !draw_chunk ||
         vertex_chunk->stride != sizeof(BspBundleVertex) ||
-        index_chunk->stride != sizeof(uint32_t) ||
+        index_chunk->stride != sizeof(uint16_t) ||
         draw_chunk->stride != sizeof(BspBundleDraw) ||
         index_chunk->count % 3u != 0u)
         return BSP_BUNDLE_GEOMETRY_INVALID;
@@ -188,8 +188,8 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
         }
     }
 
-    const uint32_t *const indices =
-        (const uint32_t *)(data + index_chunk->offset);
+    const uint16_t *const indices =
+        (const uint16_t *)(data + index_chunk->offset);
     const BspBundleDraw *const draws =
         (const BspBundleDraw *)(data + draw_chunk->offset);
     for (uint32_t index = 0; index < index_chunk->count; ++index)

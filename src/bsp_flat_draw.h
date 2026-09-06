@@ -12,7 +12,7 @@ enum {
 typedef struct BspFlatDraw {
     uint32_t sh_words[BSP_FLAT_PARAMETER_WORDS];
     uint32_t index_count;
-    const uint32_t *indices;
+    const uint16_t *indices;
 } BspFlatDraw;
 
 typedef int (*BspSetShDirectFn)(uint32_t **cursor, uint32_t capacity,
@@ -20,7 +20,7 @@ typedef int (*BspSetShDirectFn)(uint32_t **cursor, uint32_t capacity,
                                 uint32_t count);
 typedef int (*BspDrawIndexedFn)(uint32_t **cursor, uint32_t capacity,
                                 uint32_t index_count,
-                                const uint32_t *gpu_indices,
+                                const uint16_t *gpu_indices,
                                 const void *gpu_mapping,
                                 size_t gpu_mapping_bytes,
                                 uint64_t modifier);

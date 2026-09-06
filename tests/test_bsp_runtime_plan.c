@@ -19,16 +19,16 @@ int main(void)
     assert((plan.allocation_bytes &
             (BSP_RUNTIME_ALLOCATION_ALIGNMENT - 1u)) == 0u);
     assert((plan.guard_offset & 63u) == 0u);
-    assert(bsp_runtime_plan_textured(7210496u, 3695u, 164u, &plan) == 0);
-    assert(plan.vertex_srds_offset == 7210496u);
-    assert(plan.descriptor_tables_offset == 7210752u);
+    assert(bsp_runtime_plan_textured(7151360u, 3695u, 164u, &plan) == 0);
+    assert(plan.vertex_srds_offset == 7151360u);
+    assert(plan.descriptor_tables_offset == 7151616u);
     assert(plan.descriptor_table_dwords == 3936u);
-    assert(plan.clear_vertices_offset == 7226496u);
-    assert(plan.clear_indices_offset == 7226592u);
-    assert(plan.scene_draws_offset == 7226608u);
-    assert(plan.texture_bindings_offset == 7581424u);
-    assert(plan.guard_offset == 7611008u);
-    assert(plan.allocation_bytes == 0x750000u);
+    assert(plan.clear_vertices_offset == 7167360u);
+    assert(plan.clear_indices_offset == 7167456u);
+    assert(plan.scene_draws_offset == 7167472u);
+    assert(plan.texture_bindings_offset == 7522288u);
+    assert(plan.guard_offset == 7551872u);
+    assert(plan.allocation_bytes == 0x740000u);
     assert((plan.descriptor_tables_offset &
             (BSP_RUNTIME_SRD_ALIGNMENT - 1u)) == 0u);
     assert(bsp_runtime_plan(0u, 1u, &plan) != 0);

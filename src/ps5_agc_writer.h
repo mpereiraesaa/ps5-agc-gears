@@ -45,7 +45,7 @@ int ps5_agc_writer_draw_auto(
     uint64_t modifier, ps5_agc_emit_draw_auto_fn emit);
 int ps5_agc_writer_draw_index(
     uint32_t **cursor, uint32_t capacity_dwords, uint32_t index_count,
-    const uint32_t *gpu_indices, const void *gpu_mapping,
+    const uint16_t *gpu_indices, const void *gpu_mapping,
     size_t gpu_mapping_bytes, uint64_t modifier,
     ps5_agc_emit_draw_index_fn emit);
 int ps5_agc_writer_set_sh_direct(

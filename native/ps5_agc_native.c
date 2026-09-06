@@ -22,7 +22,7 @@ int ps5_native_draw_auto(uint32_t **cursor, uint32_t capacity,
 }
 
 int ps5_native_draw_index(uint32_t **cursor, uint32_t capacity,
-                          uint32_t index_count, const uint32_t *gpu_indices,
+                          uint32_t index_count, const uint16_t *gpu_indices,
                           const void *gpu_mapping, size_t gpu_mapping_bytes,
                           uint64_t modifier)
 {

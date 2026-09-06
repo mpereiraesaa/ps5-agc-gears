@@ -60,7 +60,7 @@ typedef struct BspBundleView {
     size_t bytes;
     const BspBundleVertex *vertices;
     uint32_t vertex_count;
-    const uint32_t *indices;
+    const uint16_t *indices;
     uint32_t index_count;
     const BspBundleDraw *draws;
     uint32_t draw_count;

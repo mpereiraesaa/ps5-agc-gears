@@ -96,7 +96,7 @@ static void face_color(uint32_t face, float color[4])
 }
 
 int bsp_flat_build_clear(BspFlatDraw *out, BspBundleVertex vertices[3],
-                         uint32_t indices[3],
+                         uint16_t indices[3],
                          uint32_t vertex_srd_table_address)
 {
     if (!out || !vertices || !indices || vertex_srd_table_address == 0u)
