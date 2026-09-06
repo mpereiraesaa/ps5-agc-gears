@@ -55,10 +55,13 @@ counts; generated metadata is rejected when it disagrees with the manifests.
 ## Cache and synchronization contract
 
 CPU-written transient bytes are flushed over an aligned 256-byte range, then
-an eight-DWORD `AcquireMem` packet is emitted before any resource draw. Its GCR
-control value `0x00004380` invalidates GLK, GLV, GL1 and GL2 for the CPU-to-GPU
-transition. Submission ends with the existing release-fence packet and exact
-VideoOut flip token.
+an eight-DWORD `AcquireMem` packet is emitted before any resource draw. The
+call uses the firmware-observed raw tuple engine `1`, GCR control `0x00009000`
+and poll interval `0x190`. Those values are deliberately not renamed after
+public AMD fields: the FW 12.02 builder and an observed scoped-range call prove
+their packet encoding, but not a complete semantic name for each PS5 bit.
+Submission ends with the existing release-fence packet and exact VideoOut flip
+token.
 
 GPU-to-CPU completion is accepted only when both conditions hold:
 
@@ -103,7 +106,7 @@ The run is accepted only if `validate_bsp_resource_evidence.py` proves:
 - gap-free structured `ps5log/1` with no raw, oversized or `ERROR` records;
 - two resource pipelines and four heap allocations;
 - per-frame constant, texture-table and overlay cardinality at frames 0 and
-  59,999, with complete GPU spans and GCR `0x00004380`;
+  59,999, with complete GPU spans and the observed AcquireMem tuple;
 - matching seal, zero-fence retirement and exact VideoOut token bookends;
 - 60,000 completed and connected frames with no renderer, pad or present-budget
   errors;

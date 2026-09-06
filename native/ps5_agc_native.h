@@ -34,9 +34,9 @@ int ps5_native_wait_rendering(uint32_t **cursor, uint32_t capacity_dwords,
                               uint32_t driver_mode, int32_t videoout_handle,
                               int32_t buffer_index);
 int ps5_native_acquire_mem(uint32_t **cursor, uint32_t capacity_dwords,
-                           const void *base, uint64_t bytes,
-                           uint32_t gcr_control, const void *gpu_mapping,
-                           size_t gpu_mapping_bytes);
+                           const void *base, uint64_t bytes, uint8_t engine,
+                           uint32_t gcr_control, uint32_t poll_cycles,
+                           const void *gpu_mapping, size_t gpu_mapping_bytes);
 void ps5_native_cache_flush(const void *address, size_t bytes);
 
 void ps5_native_submit_context_init(struct ps5_agc_submit_context *context,

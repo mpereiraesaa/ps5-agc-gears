@@ -69,8 +69,9 @@ int ps5_agc_writer_fill_depth(
 
 int ps5_agc_writer_acquire_mem(
     uint32_t **cursor, uint32_t capacity_dwords, const void *base,
-    uint64_t bytes, uint32_t gcr_control, const void *gpu_mapping,
-    size_t gpu_mapping_bytes, ps5_agc_emit_acquire_mem_fn emit);
+    uint64_t bytes, uint8_t engine, uint32_t gcr_control,
+    uint32_t poll_cycles, const void *gpu_mapping, size_t gpu_mapping_bytes,
+    ps5_agc_emit_acquire_mem_fn emit);
 
 int ps5_agc_writer_wait_rendering(
     uint32_t **cursor, uint32_t capacity_dwords, uint32_t driver_mode,

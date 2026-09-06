@@ -168,7 +168,9 @@ def validate(manifest_path: Path, *, bundle_sha256: str,
                 as_int(marker, "texture_descriptor_dwords") != descriptor_dwords or \
                 as_int(marker, "overlay_vertices") != 4 or \
                 as_int(marker, "overlay_indices") != 6 or \
-                marker.get("gcr") != "00004380" or \
+                as_int(marker, "acquire_engine") != 1 or \
+                marker.get("gcr") != "00009000" or \
+                marker.get("poll_cycles") != "190" or \
                 marker.get("tables_gpu_span") != "true":
             fail("per-frame resource contract mismatch")
     for index in range(2):

@@ -31,7 +31,9 @@ int ps5_cache_cpu_to_gpu_plan(const void *gpu_mapping,
         .flush_bytes = written_bytes,
         .acquire_base = (const uint8_t *)gpu_mapping + acquire_offset,
         .acquire_bytes = acquire_end - acquire_offset,
-        .gcr_control = PS5_GCR_CPU_TO_GPU,
+        .engine = PS5_AGC_ACQUIRE_ENGINE,
+        .gcr_control = PS5_AGC_ACQUIRE_GCR_CONTROL,
+        .poll_cycles = PS5_AGC_ACQUIRE_POLL_CYCLES,
     };
     return 0;
 }
@@ -52,7 +54,7 @@ const enum ps5_cache_contract_step *ps5_cache_contract_steps(size_t *count)
         PS5_CACHE_CPU_WRITE,
         PS5_CACHE_CPU_CLFLUSH,
         PS5_CACHE_CPU_MFENCE,
-        PS5_CACHE_GPU_ACQUIRE_TEXTURE_GL2,
+        PS5_CACHE_GPU_ACQUIRE_RANGE,
         PS5_CACHE_GPU_RELEASE_FENCE,
         PS5_CACHE_CPU_FENCE_ACQUIRE,
         PS5_CACHE_VIDEOOUT_TOKEN_MATCH,

@@ -71,8 +71,8 @@ static uint32_t *emit_acquire(void *writer, uint8_t engine,
                               const volatile void *base, uint64_t bytes,
                               uint32_t poll_cycles)
 {
-    assert(engine == 0u && cb_db_op == 0u && gcr_control == 0x4380u);
-    assert(base && bytes == 256u && poll_cycles == 0u);
+    assert(engine == 1u && cb_db_op == 0u && gcr_control == 0x9000u);
+    assert(base && bytes == 256u && poll_cycles == 0x190u);
     advance(writer, 8u);
     return ((struct ps5_agc_command_buffer *)writer)->up;
 }
@@ -138,7 +138,7 @@ int main(void)
     assert(cursor == gpu.words + 53);
 
     assert(ps5_agc_writer_acquire_mem(
-               &cursor, 64u, gpu.words + 64u, 256u, 0x4380u,
+               &cursor, 64u, gpu.words + 64u, 256u, 1u, 0x9000u, 0x190u,
                gpu.words, sizeof(gpu.words), emit_acquire) ==
            PS5_AGC_WRITER_OK);
     assert(cursor == gpu.words + 61);

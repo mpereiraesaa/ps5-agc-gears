@@ -627,7 +627,8 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
         (void)ps5log_printf(PS5LOG_MARK,
             "RESOURCE_FRAME_READY frame=%llu slot=%u transient_bytes=%llu "
             "constant_dwords=%u texture_descriptor_dwords=%u "
-            "overlay_vertices=%u overlay_indices=%u gcr=%08x "
+            "overlay_vertices=%u overlay_indices=%u acquire_engine=%u "
+            "gcr=%08x poll_cycles=%x "
             "tables_gpu_span=true",
             (unsigned long long)frame->frame_index, resource_slot,
             (unsigned long long)
@@ -636,7 +637,9 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
             state->resource_frames[resource_slot].texture_table_dwords,
             BSP_RESOURCE_OVERLAY_VERTICES,
             BSP_RESOURCE_OVERLAY_INDICES,
-            state->cache_plans[resource_slot].gcr_control);
+            state->cache_plans[resource_slot].engine,
+            state->cache_plans[resource_slot].gcr_control,
+            state->cache_plans[resource_slot].poll_cycles);
 #endif
     uint32_t *const begin = state->commands[frame->buffer];
     uint32_t *const end = begin +
@@ -657,7 +660,9 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
         &cursor, (uint32_t)(end - cursor),
         state->cache_plans[resource_slot].acquire_base,
         state->cache_plans[resource_slot].acquire_bytes,
+        state->cache_plans[resource_slot].engine,
         state->cache_plans[resource_slot].gcr_control,
+        state->cache_plans[resource_slot].poll_cycles,
         state->resources->resource_heap,
         state->resources->resource_heap_bytes);
     if (result != 0)

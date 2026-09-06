@@ -5,21 +5,16 @@
 #include <stdint.h>
 
 enum {
-    PS5_GCR_GLK_INVALIDATE = 1u << 7,
-    PS5_GCR_GLV_INVALIDATE = 1u << 8,
-    PS5_GCR_GL1_INVALIDATE = 1u << 9,
-    PS5_GCR_GL2_INVALIDATE = 1u << 14,
-    PS5_GCR_CPU_TO_GPU = PS5_GCR_GLK_INVALIDATE |
-                         PS5_GCR_GLV_INVALIDATE |
-                         PS5_GCR_GL1_INVALIDATE |
-                         PS5_GCR_GL2_INVALIDATE,
+    PS5_AGC_ACQUIRE_ENGINE = 1u,
+    PS5_AGC_ACQUIRE_GCR_CONTROL = 0x9000u,
+    PS5_AGC_ACQUIRE_POLL_CYCLES = 0x190u,
 };
 
 enum ps5_cache_contract_step {
     PS5_CACHE_CPU_WRITE = 1,
     PS5_CACHE_CPU_CLFLUSH = 2,
     PS5_CACHE_CPU_MFENCE = 3,
-    PS5_CACHE_GPU_ACQUIRE_TEXTURE_GL2 = 4,
+    PS5_CACHE_GPU_ACQUIRE_RANGE = 4,
     PS5_CACHE_GPU_RELEASE_FENCE = 5,
     PS5_CACHE_CPU_FENCE_ACQUIRE = 6,
     PS5_CACHE_VIDEOOUT_TOKEN_MATCH = 7,
@@ -31,7 +26,9 @@ typedef struct Ps5CpuToGpuPlan {
     size_t flush_bytes;
     const void *acquire_base;
     uint64_t acquire_bytes;
+    uint8_t engine;
     uint32_t gcr_control;
+    uint32_t poll_cycles;
 } Ps5CpuToGpuPlan;
 
 int ps5_cache_cpu_to_gpu_plan(const void *gpu_mapping,
