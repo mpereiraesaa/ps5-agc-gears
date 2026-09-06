@@ -31,7 +31,44 @@ def main() -> int:
     for value in forbidden:
         if value in text:
             raise SystemExit(f"shader source contains forbidden value: {value}")
-    print("shader source contract passed: gfx1013 compiler input, 24+1 DWORD ABI")
+    flat = (ROOT / "shaders/bsp_flat.pipe").read_text(encoding="utf-8")
+    flat_required = (
+        "layout(location = 0) in vec3 in_position;",
+        "mat4 mvp;",
+        "vec4 face_color;",
+        "userDataNode[0].sizeInDwords = 20",
+        "userDataNode[1].offsetInDwords = 20",
+        "binding[0].stride = 32",
+        "topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST",
+    )
+    for value in flat_required:
+        if flat.count(value) != 1:
+            raise SystemExit(f"BSP flat shader contract is missing: {value}")
+    for value in forbidden:
+        if value in flat:
+            raise SystemExit(f"BSP flat shader contains forbidden value: {value}")
+    textured = (ROOT / "shaders/bsp_textured.pipe").read_text(encoding="utf-8")
+    textured_required = (
+        "layout(location = 1) in vec2 in_base_uv;",
+        "layout(location = 2) in vec2 in_light_uv;",
+        "uniform sampler2D base_texture;",
+        "uniform sampler2D lightmap_texture;",
+        "base.rgb * texture(lightmap_texture, light_uv).rgb",
+        "userDataNode[2].type = DescriptorTableVaPtr",
+        "userDataNode[2].offsetInDwords = 0",
+        "userDataNode[2].next[0].type = DescriptorCombinedTexture",
+        "userDataNode[2].next[0].offsetInDwords = 0",
+        "userDataNode[2].next[1].offsetInDwords = 12",
+        "attribute[1].offset = 12",
+        "attribute[2].offset = 20",
+    )
+    for value in textured_required:
+        if textured.count(value) != 1:
+            raise SystemExit(f"BSP textured shader contract is missing: {value}")
+    for value in forbidden:
+        if value in textured:
+            raise SystemExit(f"BSP textured shader contains forbidden value: {value}")
+    print("shader source contract passed: gears, BSP flat and BSP textured ABIs")
     return 0
 
 

@@ -9,6 +9,10 @@ int ps5_native_set_flip(uint32_t **cursor, uint32_t capacity_dwords,
                         uint64_t flip_arg);
 int ps5_native_draw_auto(uint32_t **cursor, uint32_t capacity_dwords,
                          uint32_t vertex_count, uint64_t modifier);
+int ps5_native_draw_index(uint32_t **cursor, uint32_t capacity_dwords,
+                          uint32_t index_count, const uint16_t *gpu_indices,
+                          const void *gpu_mapping, size_t gpu_mapping_bytes,
+                          uint64_t modifier);
 int ps5_native_set_sh_direct(uint32_t **cursor, uint32_t capacity_dwords,
                              uint32_t compact_offset,
                              const uint32_t *values, uint32_t count);

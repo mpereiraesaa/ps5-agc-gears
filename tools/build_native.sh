@@ -30,6 +30,47 @@ fi
 make -C "$root" shaders AMDLLPC="$amdllpc" LLVM_READELF="$readelf"
 make -C "$foundation" deps libc >/dev/null
 
+bsp_bundle=${BSP_BUNDLE:-}
+bsp_noclip=${BSP_NOCLIP:-0}
+bsp_textured=${BSP_TEXTURED:-0}
+dev_conf=${PS5LOG_DEV_CONF:-$root/dev.conf}
+bsp_flags=()
+[[ $bsp_noclip == 0 || $bsp_noclip == 1 ]] || {
+    echo "BSP_NOCLIP must be 0 or 1" >&2; exit 2;
+}
+[[ $bsp_textured == 0 || $bsp_textured == 1 ]] || {
+    echo "BSP_TEXTURED must be 0 or 1" >&2; exit 2;
+}
+if [[ $bsp_noclip == 1 && -z $bsp_bundle ]]; then
+    echo "BSP_NOCLIP requires BSP_BUNDLE" >&2
+    exit 2
+fi
+if [[ $bsp_textured == 1 && $bsp_noclip != 1 ]]; then
+    echo "BSP_TEXTURED requires BSP_NOCLIP=1" >&2
+    exit 2
+fi
+if [[ -n $bsp_bundle ]]; then
+    bsp_bundle=$(realpath -- "$bsp_bundle")
+    [[ -f $bsp_bundle ]] || {
+        echo "BSP_BUNDLE must name a regular bundle file" >&2; exit 2;
+    }
+    [[ -f $dev_conf ]] || {
+        echo "BSP viewer requires PS5LOG_DEV_CONF for hardware evidence" >&2
+        exit 2
+    }
+    make -C "$root" bsp-inspect BSP_BUNDLE="$bsp_bundle"
+    python3 "$root/tools/generate_bsp_build_metadata.py" \
+        --bundle "$bsp_bundle" \
+        --output "$root/build/generated/bsp_build_metadata.h"
+    bsp_flags=(-DPS5_BSP_VIEWER=1)
+    if [[ $bsp_noclip == 1 ]]; then
+        bsp_flags+=(-DPS5_BSP_NOCLIP=1)
+    fi
+    if [[ $bsp_textured == 1 ]]; then
+        bsp_flags+=(-DPS5_BSP_TEXTURED=1)
+    fi
+fi
+
 sdk="$foundation/.deps/native/ps5-payload-sdk"
 native="$foundation/tooling/native"
 tool="$foundation/build/host/ps5-native-tool"
@@ -61,10 +102,13 @@ mkdir -p "$build/obj" "$build/import-stubs" "$dist/sce_sys" \
 cc=(env PS5_PAYLOAD_SDK="$sdk" sh "$foundation/tooling/prospero-clang18")
 common=(-O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
         -I"$root/include" -I"$root/src" -I"$root/native" \
-        -I"$root/native/ps5log" -I"$root/build/generated")
+        -I"$root/native/ps5log" -I"$root/build/generated" "${bsp_flags[@]}")
 
 sources=(
     native/main.c native/ps5_agc_native.c
+    src/bsp_bundle.c src/bsp_command_plan.c src/bsp_flat_draw.c
+    src/bsp_noclip.c src/bsp_textured_draw.c
+    src/bsp_flat_scene.c src/bsp_runtime_plan.c src/bsp_texture_descriptor.c
     src/gears_animation.c src/gears_draw_compose.c src/gears_frame_runner.c
     src/gears_frame_tracker.c src/gears_mesh.c src/gears_renderer.c
     src/gears_rt_clear.c src/gears_scene.c src/gears_telemetry.c
@@ -120,9 +164,11 @@ objects+=("$build/obj/ps5log.o" "$build/obj/ps5log_ps5_net.o" \
     --magic 0x1D3D154F
 cp "$root/sce_sys/param.json" "$root/sce_sys/icon0.png" "$dist/sce_sys/"
 cp "$foundation/runtime/libc.prx" "$dist/sce_module/libc.prx"
-dev_conf=${PS5LOG_DEV_CONF:-$root/dev.conf}
 if [[ -f $dev_conf ]]; then
     cp "$dev_conf" "$dist/dev.conf"
+fi
+if [[ -n $bsp_bundle ]]; then
+    cp "$bsp_bundle" "$dist/map.ps5bsp"
 fi
 sha256sum "$build/eboot.elf" "$dist/eboot.bin" > "$build/SHA256SUMS"
 "$tool" self --inspect --file "$dist/eboot.bin"

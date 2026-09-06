@@ -31,6 +31,9 @@ uint32_t *sceAgcCbSetShRegisterRangeDirect(
     uint32_t count);
 uint32_t *sceAgcDcbDrawIndexAuto(
     void *writer, uint32_t vertex_count, uint64_t modifier);
+uint32_t *sceAgcDcbDrawIndex(
+    void *writer, uint32_t index_count, const void *gpu_index_address,
+    uint64_t modifier);
 uint32_t *sceAgcDcbSetFlip(
     void *writer, uint32_t video_handle, int32_t buffer_index,
     uint32_t flip_mode, int64_t flip_arg);
