@@ -836,6 +836,15 @@ static int frame_submit(const GearsAnimationFrame *frame, void *opaque)
     if (result != PS5_SUBMISSION_OK || !submitted.submit_called ||
         !submitted.retain_all_resources)
         return result != 0 ? result : -2;
+#ifdef PS5_RESOURCE_FOUNDATION
+    if (frame->frame_index == 0u ||
+        frame->frame_index + 1u == BSP_GATE_FRAME_COUNT)
+        (void)ps5log_printf(PS5LOG_MARK,
+            "RESOURCE_FRAME_SUBMITTED frame=%llu slot=%u token=%llu "
+            "command_dwords=%u",
+            (unsigned long long)frame->frame_index, slot,
+            (unsigned long long)frame->token, submitted.command_dwords);
+#endif
     state->cursor[slot] = stream.cursor;
     return 0;
 }

@@ -156,10 +156,12 @@ def validate(manifest_path: Path, *, bundle_sha256: str,
 
     ready = many(messages, "RESOURCE_FRAME_READY")
     sealed = many(messages, "RESOURCE_FRAME_SEALED")
+    submitted = many(messages, "RESOURCE_FRAME_SUBMITTED")
     retired = many(messages, "RESOURCE_FRAME_RETIRED")
     video = many(messages, "BSP_VIDEOOUT_TOKEN")
     for name, markers in (("ready", ready), ("sealed", sealed),
-                          ("retired", retired), ("video", video)):
+                          ("submitted", submitted), ("retired", retired),
+                          ("video", video)):
         if [as_int(marker, "frame") for marker in markers] != BOOKEND_FRAMES:
             fail(f"{name} frame bookends mismatch")
     for marker in ready:
@@ -174,8 +176,11 @@ def validate(manifest_path: Path, *, bundle_sha256: str,
                 marker.get("tables_gpu_span") != "true":
             fail("per-frame resource contract mismatch")
     for index in range(2):
-        if as_int(sealed[index], "token") != as_int(retired[index], "token") or \
-                as_int(sealed[index], "slot") != as_int(retired[index], "slot") or \
+        if as_int(sealed[index], "token") != as_int(submitted[index], "token") or \
+                as_int(submitted[index], "token") != as_int(retired[index], "token") or \
+                as_int(sealed[index], "slot") != as_int(submitted[index], "slot") or \
+                as_int(submitted[index], "slot") != as_int(retired[index], "slot") or \
+                as_int(submitted[index], "command_dwords") <= 0 or \
                 retired[index].get("fence") != "zero" or \
                 retired[index].get("videoout_token") != "exact" or \
                 as_int(video[index], "expected") != as_int(video[index], "observed") or \

@@ -5,7 +5,8 @@
 #include "bsp_flat_draw.h"
 
 enum {
-    BSP_RESOURCE_GS_SH_OFFSET = 0x0d,
+    /* AGC direct user-data offsets are stage-banked, not interchangeable. */
+    BSP_RESOURCE_GS_SH_OFFSET = 0x8d,
     BSP_RESOURCE_PS_SH_OFFSET = 0x0d,
 };
 

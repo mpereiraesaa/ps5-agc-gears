@@ -5,11 +5,19 @@
 
 static uint32_t *mapping;
 static size_t mapping_bytes;
+static uint32_t gs_updates;
+static uint32_t ps_updates;
 
 static int set_sh(uint32_t **cursor, uint32_t capacity, uint32_t offset,
                   const uint32_t *values, uint32_t count)
 {
-    assert(cursor && capacity >= count + 2u && offset == 0x0du && values);
+    assert(cursor && capacity >= count + 2u && values);
+    if (offset == BSP_RESOURCE_GS_SH_OFFSET)
+        ++gs_updates;
+    else {
+        assert(offset == BSP_RESOURCE_PS_SH_OFFSET);
+        ++ps_updates;
+    }
     *cursor += count + 2u;
     return 0;
 }
@@ -57,10 +65,12 @@ int main(void)
                (const uint16_t *)(gpu + 52), gpu, sizeof(gpu), 7u,
                set_sh, draw, &result) == 0);
     assert(result.map_draws == 1u && result.command_dwords == 26u);
+    assert(gs_updates == 2u && ps_updates == 2u);
     assert(bsp_resource_compose_overlay(
                &cursor, commands + 64, &frame, gpu, sizeof(gpu), 7u,
                set_sh, draw, &result) == 0);
     assert(result.overlay_draws == 1u && result.command_dwords == 35u);
+    assert(gs_updates == 3u && ps_updates == 2u);
     source.base_texture = 1u;
     cursor = commands;
     assert(bsp_resource_compose_map(

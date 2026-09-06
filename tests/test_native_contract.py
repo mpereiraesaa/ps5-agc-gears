@@ -131,6 +131,7 @@ def main() -> None:
         "RESOURCE_HEAP_READY bytes=%llu allocations=4",
         "RESOURCE_FRAME_READY frame=%llu slot=%u",
         "RESOURCE_FRAME_SEALED frame=%llu slot=%u token=%llu",
+        "RESOURCE_FRAME_SUBMITTED frame=%llu slot=%u token=%llu",
         "RESOURCE_FRAME_RETIRED frame=%llu slot=%u token=%llu",
         "RESOURCE_RING_RETIRED slots=2 reusable=%s tokens=exact",
         "BSP_RESOURCE_SOAK_COMPLETE frames=%llu connected_frames=%llu",

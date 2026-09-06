@@ -52,6 +52,15 @@ table and draws a small pulsing green quad. `pipeline_permutations.json` is the
 source of truth for both pipeline identities and their application SGPR word
 counts; generated metadata is rejected when it disagrees with the manifests.
 
+AGC's direct application-user-data offsets are stage-banked. Geometry-stage
+tables are written at compact offset `0x8d`; pixel-stage tables remain at
+`0x0d`. A host regression counts updates to each bank independently. Hardware
+fault isolation also exercised clear-only, map-only and overlay-only command
+streams before identifying an earlier `0x0d` geometry write: the corrected
+overlay-only artifact completed 2,340 frames with exact retirement and zero
+renderer errors. That diagnostic run was deliberately closed externally and
+is supporting fault-isolation evidence, not the acceptance soak.
+
 ## Cache and synchronization contract
 
 CPU-written transient bytes are flushed over an aligned 256-byte range, then
@@ -108,6 +117,7 @@ The run is accepted only if `validate_bsp_resource_evidence.py` proves:
 - per-frame constant, texture-table and overlay cardinality at frames 0 and
   59,999, with complete GPU spans and the observed AcquireMem tuple;
 - matching seal, zero-fence retirement and exact VideoOut token bookends;
+- matching submitted-frame token and slot bookends between seal and retirement;
 - 60,000 completed and connected frames with no renderer, pad or present-budget
   errors;
 - visible pixels, intact guards, both transient slots reusable and all four
