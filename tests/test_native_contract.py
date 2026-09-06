@@ -129,6 +129,7 @@ def main() -> None:
     for item in (
         "BSP_RESOURCE_BOOT schema=1 target=gfx1013",
         "RESOURCE_HEAP_READY bytes=%llu allocations=4",
+        "overlay_depth=disabled",
         "RESOURCE_FRAME_READY frame=%llu slot=%u",
         "RESOURCE_FRAME_SEALED frame=%llu slot=%u token=%llu",
         "RESOURCE_FRAME_SUBMITTED frame=%llu slot=%u token=%llu",

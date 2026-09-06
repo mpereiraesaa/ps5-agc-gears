@@ -45,7 +45,7 @@ int main(void)
         .clear_vertex_table = gpu + 12,
         .texture_tables = gpu + 16,
         .texture_table_dwords = 24u,
-        .overlay_vertex_table = gpu + 40,
+        .overlay_constant_table = gpu + 40,
         .overlay_indices = (const uint16_t *)(gpu + 44),
         .overlay_index_count = 6u,
     };

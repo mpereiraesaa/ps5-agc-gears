@@ -93,6 +93,7 @@ enum {
     OVERLAY_LINKED_CX_OFFSET = 0x6000u,
     OVERLAY_LINKED_UC_OFFSET = 0x6200u,
     OVERLAY_PIPELINE_OFFSET = 0x7000u,
+    OVERLAY_DEPTH_DISABLED_OFFSET = 0x7800u,
     RESOURCE_TRANSIENT_BYTES = 0x40000u,
     RESOURCE_HEAP_ALIGNMENT = 0x10000u,
 #endif
@@ -182,6 +183,7 @@ struct native_renderer {
     uint64_t completed_tokens[2];
     uint64_t last_completed_token;
     uint64_t overlay_draw_modifier;
+    ps5_agc_register *overlay_depth_disabled;
     BspBundleVertex *clear_vertices;
     uint16_t *clear_indices;
 #endif
@@ -627,7 +629,8 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
         (void)ps5log_printf(PS5LOG_MARK,
             "RESOURCE_FRAME_READY frame=%llu slot=%u transient_bytes=%llu "
             "constant_dwords=%u texture_descriptor_dwords=%u "
-            "overlay_vertices=%u overlay_indices=%u acquire_engine=%u "
+            "overlay_vertices=%u overlay_source=constant-vsharp "
+            "overlay_indices=%u acquire_engine=%u "
             "gcr=%08x poll_cycles=%x "
             "tables_gpu_span=true",
             (unsigned long long)frame->frame_index, resource_slot,
@@ -746,6 +749,12 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
             &cursor, (uint32_t)(end - cursor), overlay->sh,
             PS5_PIPELINE_SH_REGISTERS, state->resources->shader,
             SHADER_BYTES, PS5_NATIVE_REGISTERS_SH);
+    if (result == 0)
+        result = ps5_native_set_indirect(
+            &cursor, (uint32_t)(end - cursor),
+            state->overlay_depth_disabled,
+            PS5_DEPTH_DISABLED_REGISTER_COUNT, state->resources->shader,
+            SHADER_BYTES, PS5_NATIVE_REGISTERS_CX);
     if (result == 0)
         result = bsp_resource_compose_overlay(
             &cursor, end, &state->resource_frames[resource_slot],
@@ -1499,6 +1508,10 @@ int main(void)
                 resources.surface.height) != 0)
             return fail_pre_submit("overlay_pipeline_build", -1);
     }
+    ps5_agc_register *overlay_depth_disabled =
+        (ps5_agc_register *)(base + OVERLAY_DEPTH_DISABLED_OFFSET);
+    if (ps5_depth_build_disabled(overlay_depth_disabled) != 0)
+        return fail_pre_submit("overlay_depth_state", -1);
 #endif
     ps5_agc_register *depth_registers =
         (ps5_agc_register *)(base + DEPTH_REGISTERS_OFFSET);
@@ -1628,6 +1641,7 @@ int main(void)
     renderer.overlay_pipelines[0] = &overlay_pipelines[0];
     renderer.overlay_pipelines[1] = &overlay_pipelines[1];
     renderer.overlay_draw_modifier = overlay_metadata.draw_modifier;
+    renderer.overlay_depth_disabled = overlay_depth_disabled;
     if (PS5_PIPELINE_PERMUTATION_COUNT != 2 ||
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_RESOURCE]
                 .gs_application_words != 2u ||
@@ -1636,7 +1650,7 @@ int main(void)
         return fail_pre_submit("pipeline_permutation_table", -1);
     (void)ps5log_printf(PS5LOG_MARK,
         "RESOURCE_PIPELINES_READY count=%u map=%s overlay=%s "
-        "map_gs_words=%u overlay_gs_words=%u",
+        "map_gs_words=%u overlay_gs_words=%u overlay_depth=disabled",
         PS5_PIPELINE_PERMUTATION_COUNT,
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_RESOURCE].name,
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_OVERLAY].name,

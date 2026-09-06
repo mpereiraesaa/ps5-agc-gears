@@ -11,7 +11,9 @@
 _Static_assert(sizeof(BspResourceConstants) ==
                    BSP_RESOURCE_CONSTANT_DWORDS * sizeof(uint32_t),
                "resource constant layout");
-_Static_assert(sizeof(BspOverlayVertex) == 24u, "overlay vertex layout");
+_Static_assert(sizeof(BspOverlayConstants) ==
+                   BSP_RESOURCE_CONSTANT_DWORDS * sizeof(uint32_t),
+               "overlay constant layout");
 
 static int slice(Ps5TransientRing *ring, uint32_t slot, size_t bytes,
                  size_t alignment, const void *gpu_mapping,
@@ -66,6 +68,34 @@ static int vertex_table(Ps5TransientRing *ring, uint32_t slot,
                                      &table) != 0 ||
         ps5_gfx1013_build_vsharp(table.words, (uintptr_t)vertices,
                                  stride, count) != 0)
+        return -1;
+    *table_out = table.words;
+    return 0;
+}
+
+static int overlay_constants(
+    Ps5TransientRing *ring, uint32_t slot, const void *gpu_mapping,
+    size_t gpu_mapping_bytes, uint64_t frame_index,
+    const uint32_t **table_out)
+{
+    Ps5TransientSlice data_slice;
+    Ps5TransientTable table;
+    if (slice(ring, slot, sizeof(BspOverlayConstants), 256u,
+              gpu_mapping, gpu_mapping_bytes, &data_slice) != 0 ||
+        ps5_transient_table_allocate(ring, slot,
+                                     PS5_GFX1013_VSHARP_DWORDS,
+                                     gpu_mapping, gpu_mapping_bytes,
+                                     &table) != 0)
+        return -1;
+    BspOverlayConstants *data = data_slice.cpu;
+    memset(data, 0, sizeof(*data));
+    data->color[0] = 0.04f;
+    data->color[1] = 0.35f + (float)(frame_index & 63u) / 128.0f;
+    data->color[2] = 0.10f;
+    data->color[3] = 1.0f;
+    data->debug_values[0] = (float)(frame_index & UINT64_C(0xffff));
+    if (ps5_gfx1013_build_constant_vsharp(
+            table.words, (uintptr_t)data, sizeof(*data)) != 0)
         return -1;
     *table_out = table.words;
     return 0;
@@ -130,30 +160,17 @@ int bsp_resource_frame_build(
     out->texture_tables = texture_table.words;
     out->texture_table_dwords = texture_dwords;
 
-    Ps5TransientSlice vertex_slice;
+    if (overlay_constants(ring, slot_index, gpu_mapping, gpu_mapping_bytes,
+                          frame_index, &out->overlay_constant_table) != 0)
+        return -6;
     Ps5TransientSlice index_slice;
     if (slice(ring, slot_index,
-              BSP_RESOURCE_OVERLAY_VERTICES * sizeof(BspOverlayVertex),
-              16u, gpu_mapping, gpu_mapping_bytes, &vertex_slice) != 0 ||
-        slice(ring, slot_index,
               BSP_RESOURCE_OVERLAY_INDICES * sizeof(uint16_t), 2u,
               gpu_mapping, gpu_mapping_bytes, &index_slice) != 0)
-        return -6;
-    BspOverlayVertex *overlay = vertex_slice.cpu;
-    const float x0 = -0.96f, x1 = -0.62f, y0 = 0.86f, y1 = 0.94f;
-    const float pulse = 0.35f + (float)(frame_index & 63u) / 128.0f;
-    overlay[0] = (BspOverlayVertex){{x0, y0}, {0.04f, pulse, 0.10f, 1}};
-    overlay[1] = (BspOverlayVertex){{x1, y0}, {0.04f, pulse, 0.10f, 1}};
-    overlay[2] = (BspOverlayVertex){{x1, y1}, {0.04f, pulse, 0.10f, 1}};
-    overlay[3] = (BspOverlayVertex){{x0, y1}, {0.04f, pulse, 0.10f, 1}};
+        return -7;
     uint16_t *indices = index_slice.cpu;
     const uint16_t values[BSP_RESOURCE_OVERLAY_INDICES] = {0, 1, 2, 0, 2, 3};
     memcpy(indices, values, sizeof(values));
-    if (vertex_table(ring, slot_index, gpu_mapping, gpu_mapping_bytes,
-                     overlay, sizeof(*overlay),
-                     BSP_RESOURCE_OVERLAY_VERTICES,
-                     &out->overlay_vertex_table) != 0)
-        return -7;
     out->overlay_indices = indices;
     out->overlay_index_count = BSP_RESOURCE_OVERLAY_INDICES;
     out->transient_bytes = ring->slots[slot_index].used;

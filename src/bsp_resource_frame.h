@@ -20,10 +20,10 @@ typedef struct BspResourceConstants {
     float debug_values[12];
 } BspResourceConstants;
 
-typedef struct BspOverlayVertex {
-    float position[2];
+typedef struct BspOverlayConstants {
     float color[4];
-} BspOverlayVertex;
+    float debug_values[28];
+} BspOverlayConstants;
 
 typedef struct BspResourceFrame {
     const uint32_t *map_constant_table;
@@ -32,7 +32,7 @@ typedef struct BspResourceFrame {
     const uint32_t *clear_vertex_table;
     const uint32_t *texture_tables;
     uint32_t texture_table_dwords;
-    const uint32_t *overlay_vertex_table;
+    const uint32_t *overlay_constant_table;
     const uint16_t *overlay_indices;
     uint32_t overlay_index_count;
     size_t transient_bytes;

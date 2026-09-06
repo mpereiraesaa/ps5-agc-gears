@@ -85,12 +85,12 @@ def main() -> int:
             raise SystemExit(f"BSP resource shader contract is missing: {value}")
     overlay = (ROOT / "shaders/bsp_overlay.pipe").read_text(encoding="utf-8")
     overlay_required = (
-        "layout(location = 0) in vec2 in_position;",
-        "layout(location = 1) in vec4 in_color;",
+        "uniform OverlayConstants",
+        "vec4 debug_values[7];",
+        "gl_VertexIndex",
         "userDataNode[0].sizeInDwords = 1",
-        "userDataNode[0].type = IndirectUserDataVaPtr",
-        "binding[0].stride = 24",
-        "attribute[1].offset = 8",
+        "userDataNode[0].type = DescriptorTableVaPtr",
+        "userDataNode[0].next[0].type = DescriptorConstBuffer",
     )
     for value in overlay_required:
         if value not in overlay:

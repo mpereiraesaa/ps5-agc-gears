@@ -146,7 +146,8 @@ def validate(manifest_path: Path, *, bundle_sha256: str,
     pipelines = one(messages, "RESOURCE_PIPELINES_READY")
     if as_int(pipelines, "count") != 2 or \
             as_int(pipelines, "map_gs_words") != 2 or \
-            as_int(pipelines, "overlay_gs_words") != 1:
+            as_int(pipelines, "overlay_gs_words") != 1 or \
+            pipelines.get("overlay_depth") != "disabled":
         fail("pipeline permutation contract mismatch")
     loop = one(messages, "BSP_LOOP_BEGIN")
     if loop.get("mode") != "resource-foundation-soak" or \
@@ -169,6 +170,7 @@ def validate(manifest_path: Path, *, bundle_sha256: str,
                 as_int(marker, "constant_dwords") != 32 or \
                 as_int(marker, "texture_descriptor_dwords") != descriptor_dwords or \
                 as_int(marker, "overlay_vertices") != 4 or \
+                marker.get("overlay_source") != "constant-vsharp" or \
                 as_int(marker, "overlay_indices") != 6 or \
                 as_int(marker, "acquire_engine") != 1 or \
                 marker.get("gcr") != "00009000" or \

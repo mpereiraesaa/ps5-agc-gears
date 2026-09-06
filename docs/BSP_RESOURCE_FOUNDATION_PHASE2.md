@@ -38,7 +38,9 @@ Every frame rebuilds these objects in its open transient slot:
 - map and clear vertex V# tables;
 - all 164 base/lightmap T#/S# tables (3,936 DWORDs for the private reference
   bundle);
-- four 24-byte overlay vertices, six uint16 indices and their V# table.
+- one 128-byte pulsing-color overlay constant buffer and its V# table, plus six
+  transient indices; four screen-space positions are generated from
+  `gl_VertexIndex`.
 
 The map constants contain a 4x4 camera matrix, a control vector and three debug
 vectors. The descriptor is a public-source GFX10.3 raw constant V#; vertex V#,
@@ -47,10 +49,12 @@ Every resource and table is checked against the complete GPU mapping before a
 command is emitted.
 
 `bsp_resource.pipe` consumes the constant-buffer table, vertex table and
-base/lightmap table. `bsp_overlay.pipe` consumes a separate transient vertex
+base/lightmap table. `bsp_overlay.pipe` consumes a separate transient constant
 table and draws a small pulsing green quad. `pipeline_permutations.json` is the
 source of truth for both pipeline identities and their application SGPR word
 counts; generated metadata is rejected when it disagrees with the manifests.
+The overlay pipeline explicitly disables depth testing immediately before its
+screen-space draw instead of inheriting the map's depth state.
 
 AGC's direct application-user-data offsets are stage-banked. Geometry-stage
 tables are written at compact offset `0x8d`; pixel-stage tables remain at
@@ -59,7 +63,10 @@ fault isolation also exercised clear-only, map-only and overlay-only command
 streams before identifying an earlier `0x0d` geometry write: the corrected
 overlay-only artifact completed 2,340 frames with exact retirement and zero
 renderer errors. That diagnostic run was deliberately closed externally and
-is supporting fault-isolation evidence, not the acceptance soak.
+is supporting fault-isolation evidence, not the acceptance soak. A later
+visual isolation pass showed that the transient structured-vertex fetch was
+zero-filled in this pipeline configuration, so the final overlay uses the
+already proven constant-buffer V# path and shader-generated vertices.
 
 ## Cache and synchronization contract
 

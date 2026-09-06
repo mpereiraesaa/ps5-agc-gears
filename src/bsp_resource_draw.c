@@ -114,19 +114,20 @@ int bsp_resource_compose_overlay(
 {
     if (!cursor || !*cursor || !end || *cursor > end || !frame ||
         !gpu_mapping || !gpu_mapping_bytes || !modifier || !set_sh_direct ||
-        !draw_indexed || !result || (size_t)(end - *cursor) < OVERLAY_DWORDS ||
+        !draw_indexed || !result ||
+        (size_t)(end - *cursor) < OVERLAY_DWORDS ||
         !table_visible(gpu_mapping, gpu_mapping_bytes,
-                       frame->overlay_vertex_table, 4u) ||
+                       frame->overlay_constant_table, 4u) ||
         !frame->overlay_indices || frame->overlay_index_count != 6u ||
         !ps5_gpu_span_visible(gpu_mapping, gpu_mapping_bytes,
                               frame->overlay_indices,
                               frame->overlay_index_count * sizeof(uint16_t)))
         return -1;
     uint32_t *const start = *cursor;
-    const uint32_t vertex_table =
-        (uint32_t)(uintptr_t)frame->overlay_vertex_table;
+    const uint32_t constant_table =
+        (uint32_t)(uintptr_t)frame->overlay_constant_table;
     if (set_sh_direct(cursor, (uint32_t)(end - *cursor),
-                      BSP_RESOURCE_GS_SH_OFFSET, &vertex_table, 1u) != 0 ||
+                      BSP_RESOURCE_GS_SH_OFFSET, &constant_table, 1u) != 0 ||
         draw_indexed(cursor, (uint32_t)(end - *cursor),
                      frame->overlay_index_count, frame->overlay_indices,
                      gpu_mapping, gpu_mapping_bytes, modifier) != 0)
