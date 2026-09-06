@@ -112,14 +112,64 @@ It was taken from the already-open registered Chiaki session after the soak;
 no launch, pairing or controller movement gate was repeated. The exact title
 was then closed and all four console services passed two health checks.
 
+## Gate 3: `{` alpha-test permutation
+
+The third gate is complete on FW 12.02. Transparent GoldSrc textures are no
+longer handled by a discard in the general BSP shader. Bundle inspection and a
+platform-neutral planner classify texture names beginning with `{`, count their
+draws and select the nearest alpha-tested face centroid from the initial camera.
+The private reference bundle contains one such texture and 42 alpha-tested
+draws; the other 3,569 map draws remain opaque.
+
+`bsp_resource` is now strictly opaque. The separate `bsp_alpha_test` pipeline
+uses the same base-times-lightmap resource ABI, depth test and depth writes, but
+discards base texels below alpha 0.5. Generated metadata proves the compiled
+pipelines differ in `DB_SHADER_CONTROL` only by the pixel-kill bit: opaque
+`0x00000810`, alpha-test `0x00000850`. The native command stream first submits
+the opaque draw class, switches pipeline, then submits the alpha-tested class;
+the overlay remains the final third permutation.
+
+The last two frames share the same camera, anisotropic sampler and paired
+dynamic-lightmap pattern. Frame 9,998 deliberately draws the alpha class with
+the opaque control pipeline, while frame 9,999 uses the alpha-test pipeline.
+Their distinct GPU framebuffer readbacks therefore isolate the alpha-test
+permutation. Acceptance requires:
+
+- exactly one `{` texture, 42 alpha-tested draws and 3,569 opaque draws;
+- a three-entry runtime permutation table and the exact compiled kill-bit delta;
+- distinct opaque-control/alpha-test GPU readbacks with identical lightmap slots;
+- exact fence plus VideoOut-token retirement, intact guards, 10,000 completed
+  and connected frames, zero errors and six reclaimed allocations;
+- a gap-free `bsp-texture-path-alpha-soak-complete` BYE.
+
+`validate_texture_path_alpha_evidence.py` accepted run
+`20260906T160249452Z_PPSA99997_ps5-agc-gears_0x68c9c058f710`: 10,000 frames,
+224 structured records and opaque-control/alpha-test framebuffer hashes
+`716cc2cc82d8015a` / `221c46ffdbcf3e1c`. The transcript and manifest SHA-256
+values are
+`1ab9e23155eb53abf75994401f9a130ad0b41c141f448f65907c76ebbe3408ce`
+and
+`b8080f7a2e3b68fde8b4b4fb0e88460f7a235c13caf0b13d143163c1c142b665`.
+The native ELF/fSELF SHA-256 values are
+`129f0dbb7074849b3f7fd661e3d8ce2ddfc5caeaa19dbe7718c23c6c49b6c04e`
+and
+`57b3a39fde9b57bb96ec97ed9af5ee0fee2b706ae58c6a79eb112f412c2f1b16`.
+
+The private Remote Play capture SHA-256 is
+`6c050673f69e58f1113dcbf99ecd9cf6aef3dec6c881a285dc396cb1b6f147f6`.
+It shows the alpha-tested grate/door with the scene visible through the cutout,
+instead of the earlier opaque repeated placeholder. It was taken from the
+already-open registered Chiaki session; Chiaki was neither launched nor paired.
+The exact title was then closed and all four console services passed two stable
+health checks.
+
 ## Remaining ordered gates
 
-Gates 1 and 2 do not claim completion of Phase 3. The remaining order is:
+Gates 1–3 do not claim completion of Phase 3. The remaining order is:
 
-1. an alpha-test pipeline permutation for `{` textures;
-2. a separate sky pass;
-3. consolidated resident/upload telemetry and reproducible host/hardware gates;
-4. the final 60,000-frame structured soak and pull request.
+1. a separate sky pass;
+2. consolidated resident/upload telemetry and reproducible host/hardware gates;
+3. the final 60,000-frame structured soak and pull request.
 
 Entities, PVS, water, sprites/models, platform/audio and engine integration
 remain outside this phase.

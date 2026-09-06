@@ -15,6 +15,7 @@
 #include "../src/bsp_resource_draw.h"
 #include "../src/bsp_resource_frame.h"
 #include "../src/bsp_dynamic_lightmap.h"
+#include "../src/bsp_alpha_test.h"
 #include "../src/ps5_agc_submit.h"
 #include "../src/ps5_cache_contract.h"
 #include "../src/ps5_color_target.h"
@@ -38,6 +39,7 @@
 #include "bsp_textured_shader_metadata.h"
 #ifdef PS5_RESOURCE_FOUNDATION
 #include "bsp_resource_shader_metadata.h"
+#include "bsp_alpha_test_shader_metadata.h"
 #include "bsp_overlay_shader_metadata.h"
 #include "pipeline_permutations.h"
 #endif
@@ -63,6 +65,10 @@ extern const uint8_t ps5_bsp_textured_ps_start[], ps5_bsp_textured_ps_end[];
 #ifdef PS5_RESOURCE_FOUNDATION
 extern const uint8_t ps5_bsp_resource_gs_start[], ps5_bsp_resource_gs_end[];
 extern const uint8_t ps5_bsp_resource_ps_start[], ps5_bsp_resource_ps_end[];
+extern const uint8_t ps5_bsp_alpha_test_gs_start[];
+extern const uint8_t ps5_bsp_alpha_test_gs_end[];
+extern const uint8_t ps5_bsp_alpha_test_ps_start[];
+extern const uint8_t ps5_bsp_alpha_test_ps_end[];
 extern const uint8_t ps5_bsp_overlay_gs_start[], ps5_bsp_overlay_gs_end[];
 extern const uint8_t ps5_bsp_overlay_ps_start[], ps5_bsp_overlay_ps_end[];
 #endif
@@ -95,6 +101,13 @@ enum {
     OVERLAY_LINKED_UC_OFFSET = 0x6200u,
     OVERLAY_PIPELINE_OFFSET = 0x7000u,
     OVERLAY_DEPTH_DISABLED_OFFSET = 0x7800u,
+    ALPHA_GS_HEADER_OFFSET = 0x8000u,
+    ALPHA_PS_HEADER_OFFSET = 0x8200u,
+    ALPHA_GS_CODE_OFFSET = 0x9000u,
+    ALPHA_PS_CODE_OFFSET = 0x9200u,
+    ALPHA_LINKED_CX_OFFSET = 0xa000u,
+    ALPHA_LINKED_UC_OFFSET = 0xa200u,
+    ALPHA_PIPELINE_OFFSET = 0xb000u,
     RESOURCE_TRANSIENT_BYTES = 0x40000u,
     RESOURCE_HEAP_ALIGNMENT = 0x10000u,
 #endif
@@ -186,6 +199,8 @@ struct native_renderer {
     struct ps5_pipeline_registers *pipelines[2];
 #ifdef PS5_RESOURCE_FOUNDATION
     struct ps5_pipeline_registers *overlay_pipelines[2];
+    struct ps5_pipeline_registers *alpha_test_pipelines[2];
+    BspAlphaTestPlan alpha_test_plan;
     Ps5TransientRing transient_ring;
     BspResourceFrame resource_frames[2];
     Ps5CpuToGpuPlan cache_plans[2];
@@ -679,7 +694,7 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
             completed != 0u) != PS5_TRANSIENT_OK)
         return -8;
 #ifdef PS5_TEXTURE_PATH
-#ifdef PS5_TEXTURE_MIP_GATE
+#if defined(PS5_TEXTURE_MIP_GATE) || defined(PS5_TEXTURE_ALPHA_GATE)
     if (bsp_dynamic_lightmap_update_pattern(
             &state->dynamic_lightmap_slots[resource_slot],
             &state->dynamic_lightmap_layout, &state->transient_ring,
@@ -701,6 +716,13 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
     const uint64_t lightmap_gpu_address =
         (uintptr_t)state->bsp_bundle.lightmap_pixels;
 #endif
+    enum ps5_gfx1013_filter base_filter =
+        PS5_GFX1013_FILTER_ANISOTROPIC_4X;
+#ifdef PS5_TEXTURE_MIP_GATE
+    base_filter = (frame->frame_index & 1u)
+        ? PS5_GFX1013_FILTER_ANISOTROPIC_4X
+        : PS5_GFX1013_FILTER_TRILINEAR;
+#endif
     if (bsp_resource_frame_build(
             &state->resource_frames[resource_slot],
             &state->transient_ring, resource_slot,
@@ -713,9 +735,7 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
                 (float)state->resources->surface.width /
                 (float)state->resources->surface.height,
             frame->frame_index,
-            (frame->frame_index & 1u)
-                ? PS5_GFX1013_FILTER_ANISOTROPIC_4X
-                : PS5_GFX1013_FILTER_TRILINEAR) != 0) {
+            base_filter) != 0) {
         return resource_compose_fail(state, resource_slot, -9);
     }
     Ps5TransientSlot *const transient_slot =
@@ -908,13 +928,60 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
 #ifdef PS5_BSP_VIEWER
 #ifdef PS5_RESOURCE_FOUNDATION
     BspResourceComposeResult resource_composed = {0};
-    result = bsp_resource_compose_map(
+    result = bsp_resource_compose_map_pass(
         &cursor, end, &state->resource_frames[resource_slot],
         &state->bsp_bundle, state->clear_indices,
+        BSP_RESOURCE_DRAW_OPAQUE, 1,
         state->resources->resource_heap,
         state->resources->resource_heap_bytes, state->draw_modifier,
         ps5_native_set_sh_direct, ps5_native_draw_index,
         &resource_composed);
+    struct ps5_pipeline_registers *alpha_test =
+        state->alpha_test_pipelines[frame->buffer];
+#ifdef PS5_TEXTURE_ALPHA_GATE
+    const int alpha_test_enabled =
+        frame->frame_index != BSP_GATE_FRAME_COUNT - 2u;
+    if (!alpha_test_enabled)
+        alpha_test = state->pipelines[frame->buffer];
+#endif
+    if (result == 0)
+        result = ps5_native_set_indirect(
+            &cursor, (uint32_t)(end - cursor), alpha_test->cx,
+            PS5_PIPELINE_CX_REGISTERS, state->resources->shader,
+            SHADER_BYTES, PS5_NATIVE_REGISTERS_CX);
+    if (result == 0)
+        result = ps5_native_set_indirect(
+            &cursor, (uint32_t)(end - cursor), alpha_test->uc,
+            PS5_PIPELINE_UC_REGISTERS, state->resources->shader,
+            SHADER_BYTES, PS5_NATIVE_REGISTERS_UC);
+    if (result == 0)
+        result = ps5_native_set_indirect(
+            &cursor, (uint32_t)(end - cursor), alpha_test->sh,
+            PS5_PIPELINE_SH_REGISTERS, state->resources->shader,
+            SHADER_BYTES, PS5_NATIVE_REGISTERS_SH);
+    if (result == 0)
+        result = bsp_resource_compose_map_pass(
+            &cursor, end, &state->resource_frames[resource_slot],
+            &state->bsp_bundle, state->clear_indices,
+            BSP_RESOURCE_DRAW_ALPHA_TEST, 0,
+            state->resources->resource_heap,
+            state->resources->resource_heap_bytes, state->draw_modifier,
+            ps5_native_set_sh_direct, ps5_native_draw_index,
+            &resource_composed);
+#ifdef PS5_TEXTURE_ALPHA_GATE
+    if (result == 0 &&
+        (frame->frame_index == 0u ||
+         frame->frame_index + 2u >= BSP_GATE_FRAME_COUNT))
+        (void)ps5log_printf(PS5LOG_MARK,
+            "ALPHA_TEST_FRAME frame=%llu slot=%u mode=%s "
+            "opaque_draws=%u alpha_test_draws=%u sampler=anisotropic4x "
+            "lightmap_pattern=%u",
+            (unsigned long long)frame->frame_index, resource_slot,
+            alpha_test_enabled ? "alpha-test" : "opaque-control",
+            resource_composed.opaque_draws,
+            resource_composed.alpha_test_draws,
+            state->dynamic_lightmap_updates[resource_slot].pattern);
+#endif
     struct ps5_pipeline_registers *overlay =
         state->overlay_pipelines[resource_slot];
     if (result == 0)
@@ -947,6 +1014,9 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
             ps5_native_draw_index, &resource_composed);
     if (result != 0 ||
         resource_composed.map_draws != state->bsp_bundle.draw_count ||
+        resource_composed.opaque_draws +
+                resource_composed.alpha_test_draws !=
+            state->bsp_bundle.draw_count ||
         resource_composed.overlay_draws != 1u)
         return resource_compose_fail(state, resource_slot, -16);
 #elif defined(PS5_BSP_TEXTURED)
@@ -1319,7 +1389,9 @@ static uint64_t bright_pixel_count(const void *data, size_t bytes)
 static void park_complete(void)
 {
 #ifdef PS5_TEXTURE_PATH
-#ifdef PS5_TEXTURE_MIP_GATE
+#ifdef PS5_TEXTURE_ALPHA_GATE
+    ps5log_close("bsp-texture-path-alpha-soak-complete");
+#elif defined(PS5_TEXTURE_MIP_GATE)
     ps5log_close("bsp-texture-path-mip-soak-complete");
 #else
     ps5log_close("bsp-texture-path-lightmap-soak-complete");
@@ -1379,7 +1451,15 @@ int main(void)
                         log_path ? log_path : "unavailable");
 #ifdef PS5_BSP_VIEWER
 #ifdef PS5_TEXTURE_PATH
-#ifdef PS5_TEXTURE_MIP_GATE
+#ifdef PS5_TEXTURE_ALPHA_GATE
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_TEXTURE_PATH_BOOT schema=1 slice=alpha-test "
+        "target=gfx1013 fw=12.02 transient_slots=2 "
+        "ownership=fence+videoout bundle_sha256=%s bundle_bytes=%u "
+        "soak_frames=%u",
+        PS5_BSP_BUNDLE_SHA256, PS5_BSP_BUNDLE_BYTES,
+        BSP_GATE_FRAME_COUNT);
+#elif defined(PS5_TEXTURE_MIP_GATE)
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_TEXTURE_PATH_BOOT schema=1 slice=mip-sampler "
         "target=gfx1013 fw=12.02 transient_slots=2 "
@@ -1399,7 +1479,7 @@ int main(void)
 #elif defined(PS5_RESOURCE_FOUNDATION)
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_RESOURCE_BOOT schema=1 target=gfx1013 fw=12.02 "
-        "constants=vsharp transient_slots=2 pipelines=2 overlay=quad "
+        "constants=vsharp transient_slots=2 pipelines=3 overlay=quad "
         "bundle_sha256=%s bundle_bytes=%u soak_frames=%u",
         PS5_BSP_BUNDLE_SHA256, PS5_BSP_BUNDLE_BYTES,
         BSP_GATE_FRAME_COUNT);
@@ -1646,6 +1726,84 @@ int main(void)
             return fail_pre_submit("pipeline_build", -1);
     }
 #ifdef PS5_RESOURCE_FOUNDATION
+    const struct ps5_shader_metadata alpha_test_metadata = {
+        PS5_BSP_ALPHA_TEST_GS_RSRC1, PS5_BSP_ALPHA_TEST_GS_RSRC2,
+        PS5_BSP_ALPHA_TEST_PS_RSRC1, PS5_BSP_ALPHA_TEST_PS_RSRC2,
+        PS5_BSP_ALPHA_TEST_GE_CNTL,
+        PS5_BSP_ALPHA_TEST_SHADER_STAGES_EN,
+        PS5_BSP_ALPHA_TEST_GS_OUT_PRIM_TYPE,
+        PS5_BSP_ALPHA_TEST_DRAW_MODIFIER,
+        ps5_bsp_alpha_test_pre_raster_cx,
+        sizeof(ps5_bsp_alpha_test_pre_raster_cx) /
+            sizeof(ps5_bsp_alpha_test_pre_raster_cx[0]),
+        ps5_bsp_alpha_test_pixel_cx,
+        sizeof(ps5_bsp_alpha_test_pixel_cx) /
+            sizeof(ps5_bsp_alpha_test_pixel_cx[0])
+    };
+    struct ps5_shader_arena *alpha_gs_arena =
+        (struct ps5_shader_arena *)(base + ALPHA_GS_HEADER_OFFSET);
+    struct ps5_shader_arena *alpha_ps_arena =
+        (struct ps5_shader_arena *)(base + ALPHA_PS_HEADER_OFFSET);
+    uint8_t *alpha_gs_code = base + ALPHA_GS_CODE_OFFSET;
+    uint8_t *alpha_ps_code = base + ALPHA_PS_CODE_OFFSET;
+    const size_t alpha_gs_isa =
+        (size_t)(ps5_bsp_alpha_test_gs_end - ps5_bsp_alpha_test_gs_start);
+    const size_t alpha_ps_isa =
+        (size_t)(ps5_bsp_alpha_test_ps_end - ps5_bsp_alpha_test_ps_start);
+    const uint32_t alpha_gs_size =
+        (uint32_t)alpha_gs_isa + SHADER_FOOTER_BYTES;
+    const uint32_t alpha_ps_size =
+        (uint32_t)alpha_ps_isa + SHADER_FOOTER_BYTES;
+    if (alpha_gs_isa != PS5_BSP_ALPHA_TEST_GS_ISA_BYTES ||
+        alpha_ps_isa != PS5_BSP_ALPHA_TEST_PS_ISA_BYTES ||
+        alpha_test_metadata.draw_modifier != metadata.draw_modifier ||
+        ps5_shader_header_build(alpha_gs_arena, PS5_SHADER_PRE_RASTER,
+                                alpha_gs_size, &alpha_test_metadata) != 0 ||
+        ps5_shader_header_build(alpha_ps_arena, PS5_SHADER_PIXEL,
+                                alpha_ps_size, &alpha_test_metadata) != 0)
+        return fail_pre_submit("alpha_test_shader_header", -1);
+    memcpy(alpha_gs_code, ps5_bsp_alpha_test_gs_start, alpha_gs_isa);
+    memcpy(alpha_ps_code, ps5_bsp_alpha_test_ps_start, alpha_ps_isa);
+    memcpy(alpha_gs_code + alpha_gs_size - SHADER_FOOTER_BYTES,
+           "barefoot", 8u);
+    memcpy(alpha_ps_code + alpha_ps_size - SHADER_FOOTER_BYTES,
+           "barefoot", 8u);
+    void *alpha_gs_object = 0;
+    void *alpha_ps_object = 0;
+    result = sceAgcCreateShader(&alpha_gs_object, alpha_gs_arena,
+                                alpha_gs_code);
+    if (result != 0 || alpha_gs_object != alpha_gs_arena)
+        return fail_pre_submit("create_alpha_test_gs",
+                               result != 0 ? result : -1);
+    result = sceAgcCreateShader(&alpha_ps_object, alpha_ps_arena,
+                                alpha_ps_code);
+    if (result != 0 || alpha_ps_object != alpha_ps_arena)
+        return fail_pre_submit("create_alpha_test_ps",
+                               result != 0 ? result : -1);
+    struct ps5_agc_linked_cx *alpha_linked_cx =
+        (struct ps5_agc_linked_cx *)(base + ALPHA_LINKED_CX_OFFSET);
+    struct ps5_agc_linked_uc *alpha_linked_uc =
+        (struct ps5_agc_linked_uc *)(base + ALPHA_LINKED_UC_OFFSET);
+    result = sceAgcLinkShaders(alpha_linked_cx, alpha_linked_uc, 0,
+                               alpha_gs_object, alpha_ps_object, 4u);
+    if (result != 0)
+        return fail_pre_submit("link_alpha_test_shaders", result);
+    struct ps5_pipeline_registers *alpha_test_pipelines =
+        (struct ps5_pipeline_registers *)(base + ALPHA_PIPELINE_OFFSET);
+    for (unsigned slot = 0; slot < 2u; ++slot) {
+        ps5_agc_register color[PS5_COLOR_REGISTER_COUNT];
+        const uintptr_t address = (uintptr_t)resources.framebuffer +
+            resources.surface.buffer_offsets[slot];
+        if (ps5_color_build_target(color, defaults, address,
+                                   resources.surface.width,
+                                   resources.surface.height) != 0 ||
+            ps5_pipeline_build(
+                &alpha_test_pipelines[slot], color, alpha_linked_cx,
+                alpha_linked_uc, alpha_gs_arena->cx, alpha_ps_arena->cx,
+                alpha_gs_arena->sh, alpha_ps_arena->sh,
+                resources.surface.width, resources.surface.height) != 0)
+            return fail_pre_submit("alpha_test_pipeline_build", -1);
+    }
     const struct ps5_shader_metadata overlay_metadata = {
         PS5_BSP_OVERLAY_GS_RSRC1, PS5_BSP_OVERLAY_GS_RSRC2,
         PS5_BSP_OVERLAY_PS_RSRC1, PS5_BSP_OVERLAY_PS_RSRC2,
@@ -1738,6 +1896,15 @@ int main(void)
 #ifdef PS5_BSP_VIEWER
     if (prepare_bsp_scene() != 0)
         return fail_pre_submit("bsp_scene", -1);
+#ifdef PS5_TEXTURE_ALPHA_GATE
+    if (bsp_alpha_test_plan(&renderer.bsp_bundle,
+                            renderer.noclip.position,
+                            &renderer.alpha_test_plan) != 0)
+        return fail_pre_submit("alpha_test_plan", -1);
+    memcpy(renderer.noclip.forward,
+           renderer.alpha_test_plan.target_forward,
+           sizeof(renderer.noclip.forward));
+#endif
 #ifdef PS5_BSP_TEXTURED
     const uint32_t bsp_draw_dwords =
         renderer.bsp_draw_count * BSP_TEXTURED_DWORDS_PER_DRAW;
@@ -1784,7 +1951,7 @@ int main(void)
         (unsigned long long)resources.resource_heap_bytes,
         (unsigned long long)renderer.transient_ring.slots[0].bytes);
 #endif
-#ifdef PS5_TEXTURE_MIP_GATE
+#if defined(PS5_TEXTURE_MIP_GATE) || defined(PS5_TEXTURE_ALPHA_GATE)
     uint32_t minimum_mips = 15u;
     uint32_t maximum_mips = 0u;
     uint64_t mip_chain_bytes = 0u;
@@ -1813,13 +1980,56 @@ int main(void)
         "base_filter=alternating-trilinear-anisotropic4x "
         "lightmap_filter=bilinear "
 #else
-        "filter=bilinear "
+        "base_filter=anisotropic4x lightmap_filter=bilinear "
 #endif
         "composition=base_x_lightmap",
         renderer.bsp_bundle.texture_count,
         renderer.bsp_plan.descriptor_table_dwords,
         renderer.bsp_bundle.lightmap_image->width,
         renderer.bsp_bundle.lightmap_image->height);
+#ifdef PS5_TEXTURE_ALPHA_GATE
+    uint32_t opaque_draws = 0u;
+    uint32_t alpha_test_draws = 0u;
+    uint32_t opaque_db_shader_control = 0u;
+    uint32_t alpha_db_shader_control = 0u;
+    int opaque_db_found = 0;
+    int alpha_db_found = 0;
+    for (size_t index = 0u;
+         index < sizeof(ps5_bsp_resource_pixel_cx) /
+                     sizeof(ps5_bsp_resource_pixel_cx[0]); ++index)
+        if (ps5_bsp_resource_pixel_cx[index].offset == 0x203u) {
+            opaque_db_shader_control =
+                ps5_bsp_resource_pixel_cx[index].value;
+            opaque_db_found = 1;
+        }
+    for (size_t index = 0u;
+         index < sizeof(ps5_bsp_alpha_test_pixel_cx) /
+                     sizeof(ps5_bsp_alpha_test_pixel_cx[0]); ++index)
+        if (ps5_bsp_alpha_test_pixel_cx[index].offset == 0x203u) {
+            alpha_db_shader_control =
+                ps5_bsp_alpha_test_pixel_cx[index].value;
+            alpha_db_found = 1;
+        }
+    if (bsp_resource_draw_counts(&renderer.bsp_bundle, &opaque_draws,
+                                 &alpha_test_draws) != 0 ||
+        alpha_test_draws != renderer.alpha_test_plan.draw_count ||
+        opaque_draws + alpha_test_draws != renderer.bsp_bundle.draw_count ||
+        !opaque_db_found || !alpha_db_found ||
+        (opaque_db_shader_control & 0x40u) != 0u ||
+        (alpha_db_shader_control & 0x40u) == 0u)
+        return fail_pre_submit("alpha_test_draw_classification", -1);
+    (void)ps5log_printf(PS5LOG_MARK,
+        "ALPHA_TEST_READY textures=%u draws=%u opaque_draws=%u "
+        "target_texture=%u target_face=%u camera=nearest-centroid "
+        "opaque_pipeline=bsp_resource alpha_pipeline=bsp_alpha_test "
+        "opaque_db=%08x alpha_db=%08x kill_bit=0x40 "
+        "threshold=0.5 depth_write=enabled blend=disabled",
+        renderer.alpha_test_plan.texture_count,
+        renderer.alpha_test_plan.draw_count, opaque_draws,
+        renderer.alpha_test_plan.target_texture,
+        renderer.alpha_test_plan.target_face,
+        opaque_db_shader_control, alpha_db_shader_control);
+#endif
 #elif defined(PS5_BSP_TEXTURED)
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_TEXTURE_TABLES_READY textures=%u descriptor_dwords=%u "
@@ -1905,21 +2115,29 @@ int main(void)
 #ifdef PS5_RESOURCE_FOUNDATION
     renderer.overlay_pipelines[0] = &overlay_pipelines[0];
     renderer.overlay_pipelines[1] = &overlay_pipelines[1];
+    renderer.alpha_test_pipelines[0] = &alpha_test_pipelines[0];
+    renderer.alpha_test_pipelines[1] = &alpha_test_pipelines[1];
     renderer.overlay_draw_modifier = overlay_metadata.draw_modifier;
     renderer.overlay_depth_disabled = overlay_depth_disabled;
-    if (PS5_PIPELINE_PERMUTATION_COUNT != 2 ||
+    if (PS5_PIPELINE_PERMUTATION_COUNT != 3 ||
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_RESOURCE]
+                .gs_application_words != 2u ||
+        ps5_pipeline_permutations[PS5_PIPELINE_BSP_ALPHA_TEST]
                 .gs_application_words != 2u ||
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_OVERLAY]
                 .gs_application_words != 1u)
         return fail_pre_submit("pipeline_permutation_table", -1);
     (void)ps5log_printf(PS5LOG_MARK,
-        "RESOURCE_PIPELINES_READY count=%u map=%s overlay=%s "
-        "map_gs_words=%u overlay_gs_words=%u overlay_depth=disabled",
+        "RESOURCE_PIPELINES_READY count=%u map=%s alpha_test=%s overlay=%s "
+        "map_gs_words=%u alpha_gs_words=%u overlay_gs_words=%u "
+        "overlay_depth=disabled",
         PS5_PIPELINE_PERMUTATION_COUNT,
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_RESOURCE].name,
+        ps5_pipeline_permutations[PS5_PIPELINE_BSP_ALPHA_TEST].name,
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_OVERLAY].name,
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_RESOURCE]
+            .gs_application_words,
+        ps5_pipeline_permutations[PS5_PIPELINE_BSP_ALPHA_TEST]
             .gs_application_words,
         ps5_pipeline_permutations[PS5_PIPELINE_BSP_OVERLAY]
             .gs_application_words);
@@ -1952,7 +2170,14 @@ int main(void)
     input.user = &renderer;
 #ifdef PS5_BSP_VIEWER
 #ifdef PS5_TEXTURE_PATH
-#ifdef PS5_TEXTURE_MIP_GATE
+#ifdef PS5_TEXTURE_ALPHA_GATE
+    (void)ps5log_line(PS5LOG_MARK,
+        "BSP_LOOP_BEGIN mode=texture-path-alpha-soak buffers=2 "
+        "color_dma=false depth_dma=true indexed=true frames=10000 "
+        "opaque_pass=separate alpha_test_pass=separate "
+        "sampler=anisotropic4x lightmap_pattern=paired "
+        "descriptors=per-frame overlay=fixed retirement=fence+videoout");
+#elif defined(PS5_TEXTURE_MIP_GATE)
     (void)ps5log_line(PS5LOG_MARK,
         "BSP_LOOP_BEGIN mode=texture-path-mip-soak buffers=2 "
         "color_dma=false depth_dma=true indexed=true frames=10000 "
@@ -2107,7 +2332,7 @@ int main(void)
             renderer.dynamic_lightmap_slots[1].pixels,
             &renderer.dynamic_lightmap_layout) ==
             renderer.dynamic_lightmap_slots[1].surrounding_hash &&
-#ifdef PS5_TEXTURE_MIP_GATE
+#if defined(PS5_TEXTURE_MIP_GATE) || defined(PS5_TEXTURE_ALPHA_GATE)
         renderer.dynamic_lightmap_slots[0].last_pattern == 1u &&
         renderer.dynamic_lightmap_slots[1].last_pattern == 1u &&
         bsp_dynamic_lightmap_patch_hash(
@@ -2126,7 +2351,7 @@ int main(void)
             BSP_GATE_FRAME_COUNT - 1u;
     if (!dynamic_lightmap_valid)
         park("dynamic-lightmap-readback-or-guard-gate-failure");
-#ifdef PS5_TEXTURE_MIP_GATE
+#if defined(PS5_TEXTURE_MIP_GATE) || defined(PS5_TEXTURE_ALPHA_GATE)
     (void)ps5log_printf(PS5LOG_MARK,
         "DYNAMIC_LIGHTMAP_READBACK slot0=%016llx slot1=%016llx "
         "final_pattern=1 slots_equal=true surrounding=stable "
@@ -2163,6 +2388,17 @@ int main(void)
         (unsigned long long)readback_bytes,
         (unsigned long long)run.frames_completed);
 #endif
+#ifdef PS5_TEXTURE_ALPHA_GATE
+    (void)ps5log_printf(PS5LOG_MARK,
+        "ALPHA_TEST_READBACK opaque_control_buffer=%016llx "
+        "alpha_test_buffer=%016llx bytes=%llu sampler=anisotropic4x "
+        "lightmap_pattern=1 paired=true framebuffer_distinct=true "
+        "guards=intact frames=%llu",
+        (unsigned long long)first_hash,
+        (unsigned long long)second_hash,
+        (unsigned long long)readback_bytes,
+        (unsigned long long)run.frames_completed);
+#endif
 #endif
     if (!resource_valid)
         park("resource-render-or-retirement-gate-failure");
@@ -2188,7 +2424,12 @@ int main(void)
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_TEXTURE_PATH_LIGHTMAP_COMPLETE frames=%llu "
         "resident_bytes=%llu uploaded_bytes=%llu "
-        "patch=%u,%u+%ux%u hit_face=%u patterns=alternating "
+        "patch=%u,%u+%ux%u hit_face=%u "
+#if defined(PS5_TEXTURE_MIP_GATE) || defined(PS5_TEXTURE_ALPHA_GATE)
+        "patterns=paired "
+#else
+        "patterns=alternating "
+#endif
         "readback=gpu-visible surrounding=stable tokens=exact "
         "guards=intact errors=%llu",
         (unsigned long long)run.frames_completed,
@@ -2210,11 +2451,22 @@ int main(void)
         renderer.bsp_bundle.texture_count,
         (unsigned long long)run.telemetry.errors);
 #endif
+#ifdef PS5_TEXTURE_ALPHA_GATE
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_TEXTURE_PATH_ALPHA_COMPLETE frames=%llu textures=%u draws=%u "
+        "pipeline=separate opaque_control=gpu-visible "
+        "alpha_test=gpu-visible paired_lightmap=true tokens=exact "
+        "guards=intact errors=%llu",
+        (unsigned long long)run.frames_completed,
+        renderer.alpha_test_plan.texture_count,
+        renderer.alpha_test_plan.draw_count,
+        (unsigned long long)run.telemetry.errors);
+#endif
 #endif
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_RESOURCE_SOAK_COMPLETE frames=%llu connected_frames=%llu "
         "read_errors=%llu textures=%u descriptor_dwords=%u "
-        "constants=per-frame overlay=transient pipelines=2 "
+        "constants=per-frame overlay=transient pipelines=3 "
         "tokens=exact guards=intact errors=%llu",
         (unsigned long long)run.frames_completed,
         (unsigned long long)renderer.noclip.connected_frames,

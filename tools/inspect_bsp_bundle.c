@@ -1,5 +1,6 @@
 #include "bsp_bundle.h"
 #include "bsp_dynamic_lightmap.h"
+#include "bsp_alpha_test.h"
 #include "bsp_texture_descriptor.h"
 
 #include <stdio.h>
@@ -87,6 +88,20 @@ int main(int argc, char **argv)
                dynamic.patch_x, dynamic.patch_y, dynamic.patch_width,
                dynamic.patch_height, dynamic.hit_face, dynamic.patch_bytes,
                dynamic.dirty_span_bytes);
+        BspAlphaTestPlan alpha;
+        const int alpha_result =
+            bsp_alpha_test_plan(&view, view.camera_position, &alpha);
+        if (alpha_result == 0)
+            printf(" alpha_textures=%u alpha_draws=%u alpha_target=%u:%u",
+                   alpha.texture_count, alpha.draw_count,
+                   alpha.target_texture, alpha.target_face);
+        else if (alpha_result == -2)
+            printf(" alpha_textures=0 alpha_draws=0");
+        else {
+            fprintf(stderr, "alpha-test planning failed: %d\n", alpha_result);
+            free(data);
+            return 1;
+        }
     }
     putchar('\n');
     free(data);

@@ -58,6 +58,14 @@ GPU-visible framebuffer hashes; both dynamic-lightmap slot hashes must remain
 equal. The accepted run must also retain every Gate 1 ownership, guard, upload
 and exact-token invariant.
 
+The alpha-test gate adds `ALPHA_TEST_READY`, three `ALPHA_TEST_FRAME` samples,
+`ALPHA_TEST_READBACK` and `BSP_TEXTURE_PATH_ALPHA_COMPLETE`. The ready record
+fixes the `{` texture/draw partition, the selected camera target and the raw
+opaque/alpha `DB_SHADER_CONTROL` values. Final control and alpha-test frames
+must share the same camera, anisotropic sampler and dynamic-lightmap pattern,
+while producing distinct GPU-visible framebuffer hashes. The accepted run must
+also preserve all prior ownership, guard, upload and exact-token invariants.
+
 ## Continuous-runtime closure
 
 The production runtime uses one persistent frame state machine and emits a

@@ -89,7 +89,10 @@
 - [x] Add deterministic mip chains and mip-aware trilinear/anisotropic
   descriptors; pass their host contracts and paired-lightmap 10,000-frame FW
   12.02 hardware gate with distinct sampler readbacks.
-- [ ] Add the `{` alpha-test permutation and separate sky pass.
+- [x] Add the `{` alpha-test permutation as a separate opaque/alpha draw pass;
+  pass its compiled kill-bit contract and paired-state 10,000-frame FW 12.02
+  hardware gate with distinct control/alpha readbacks.
+- [ ] Add sky as a separate pass.
 - [ ] Pass and archive the complete Phase 3 60,000-frame hardware gate.
 - [x] Require pull requests on `main`; require the host CI check after this PR
   establishes its final check context.

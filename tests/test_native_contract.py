@@ -182,7 +182,29 @@ def main() -> None:
     if "bsp-texture-mip-native-release" not in makefile or \
             "BSP_TEXTURE_MIP_GATE=1" not in makefile:
         raise SystemExit("mip gate release target missing")
+    for item in (
+        "BSP_TEXTURE_ALPHA_GATE requires BSP_TEXTURE_PATH=1",
+        "-DPS5_TEXTURE_ALPHA_GATE=1",
+        "src/bsp_alpha_test.c",
+    ):
+        if item not in builder:
+            raise SystemExit(f"alpha-test gate native build contract missing: {item}")
+    for item in (
+        "BSP_TEXTURE_PATH_BOOT schema=1 slice=alpha-test",
+        "ALPHA_TEST_READY textures=%u draws=%u opaque_draws=%u",
+        "ALPHA_TEST_FRAME frame=%llu slot=%u mode=%s",
+        "BSP_LOOP_BEGIN mode=texture-path-alpha-soak",
+        "ALPHA_TEST_READBACK opaque_control_buffer=%016llx",
+        "BSP_TEXTURE_PATH_ALPHA_COMPLETE frames=%llu textures=%u draws=%u",
+        'ps5log_close("bsp-texture-path-alpha-soak-complete")',
+    ):
+        if item not in source:
+            raise SystemExit(f"alpha-test gate runtime contract missing: {item}")
+    if "bsp-texture-alpha-native-release" not in makefile or \
+            "BSP_TEXTURE_ALPHA_GATE=1" not in makefile:
+        raise SystemExit("alpha-test gate release target missing")
     for item in ('bsp_resource.gs.bin', 'bsp_resource.ps.bin',
+                 'bsp_alpha_test.gs.bin', 'bsp_alpha_test.ps.bin',
                  'bsp_overlay.gs.bin', 'bsp_overlay.ps.bin'):
         if item not in assets:
             raise SystemExit(f"resource-foundation shader asset missing: {item}")

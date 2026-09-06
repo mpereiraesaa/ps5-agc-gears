@@ -5,6 +5,40 @@ They are not compatibility claims for other firmware or consoles. Run logs and
 captures live in the private parent laboratory; this public boundary records
 only sanitized identifiers, hashes, outcomes and known limitations.
 
+## Phase 3 alpha-test gate
+
+The third ordered Phase 3 gate passed 10,000 frames on FW 12.02:
+
+- Run: `20260906T160249452Z_PPSA99997_ps5-agc-gears_0x68c9c058f710`
+- Native ELF SHA-256:
+  `129f0dbb7074849b3f7fd661e3d8ce2ddfc5caeaa19dbe7718c23c6c49b6c04e`
+- Signed fSELF SHA-256:
+  `57b3a39fde9b57bb96ec97ed9af5ee0fee2b706ae58c6a79eb112f412c2f1b16`
+- Private bundle SHA-256/bytes:
+  `05a2f8ecc0b21df1e0ad3f5a159f7f20ae847c8ef252245959561c42f6e3fe52` /
+  10,121,728
+- Transcript/manifest SHA-256:
+  `1ab9e23155eb53abf75994401f9a130ad0b41c141f448f65907c76ebbe3408ce` /
+  `b8080f7a2e3b68fde8b4b4fb0e88460f7a235c13caf0b13d143163c1c142b665`
+- Requested/completed/connected: 10,000/10,000/10,000
+- Alpha textures/draws and opaque draws: 1 / 42 / 3,569
+- Compiled opaque/alpha `DB_SHADER_CONTROL`: `0x00000810` / `0x00000850`
+- Final opaque-control/alpha-test GPU readbacks:
+  `716cc2cc82d8015a` / `221c46ffdbcf3e1c` (distinct)
+- Paired final lightmap slots: equal, pattern 1
+- Resident/total uploaded bytes: 76,383,232 / 173,632,448
+- Fence and VideoOut tokens: exact; guards intact; renderer errors: 0
+- Teardown: gap-free BYE at sequence 224, six allocations reclaimed,
+  exact-title closure and two stable healthy four-service checks
+
+The strict validator accepted the immutable manifest and exact private bundle
+identity. A private capture from the already-running registered Chiaki session
+shows the cutout surface with geometry behind it; its SHA-256 is
+`6c050673f69e58f1113dcbf99ecd9cf6aef3dec6c881a285dc396cb1b6f147f6`.
+Neither Chiaki nor the DualSense movement gate was restarted. This gate proves
+the separate `{` alpha-test draw class and compiled shader permutation, not the
+pending sky or final 60,000-frame gates.
+
 ## Phase 3 mip/sampler gate
 
 The second ordered Phase 3 gate passed 10,000 frames on FW 12.02:
