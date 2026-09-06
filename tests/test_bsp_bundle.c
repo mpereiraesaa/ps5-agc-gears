@@ -188,6 +188,13 @@ int main(void)
            view.lightmap_pixel_count == 64u && view.textures &&
            view.texture_count == 1u && view.texture_pixel_bytes == 256u &&
            view.textures[0].width == 17u);
+    BspBundleTexture *const texture =
+        (BspBundleTexture *)(light.bytes + TEXTURE_METADATA_OFFSET);
+    texture->flags = BSP_BUNDLE_TEXTURE_NODRAW;
+    light_checksums(light.bytes);
+    assert(bsp_bundle_open(light.bytes, sizeof(light.bytes), &view) ==
+           BSP_BUNDLE_GEOMETRY_INVALID);
+    texture->flags = BSP_BUNDLE_TEXTURE_TRANSPARENT;
     BspBundleImage *const image =
         (BspBundleImage *)(light.bytes + LIGHT_IMAGE_OFFSET);
     image->row_pitch = 252u;
@@ -195,8 +202,6 @@ int main(void)
     assert(bsp_bundle_open(light.bytes, sizeof(light.bytes), &view) ==
            BSP_BUNDLE_GEOMETRY_INVALID);
     image->row_pitch = 256u;
-    BspBundleTexture *const texture =
-        (BspBundleTexture *)(light.bytes + TEXTURE_METADATA_OFFSET);
     texture->offset = 1u;
     light_checksums(light.bytes);
     assert(bsp_bundle_open(light.bytes, sizeof(light.bytes), &view) ==

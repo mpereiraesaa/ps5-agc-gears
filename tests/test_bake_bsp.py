@@ -153,6 +153,11 @@ def main() -> int:
     assert external_texture[7] == (BAKER.TEXTURE_FLAG_TRANSPARENT |
                                     BAKER.TEXTURE_FLAG_FALLBACK)
 
+    nodraw = bytearray(source)
+    nodraw[texture_lump_offset + 8:texture_lump_offset + 24] = \
+        struct.pack("<16s", b"aaatrigger")
+    must_fail(bytes(nodraw), "no renderable faces")
+
     wrong_version = bytearray(source)
     struct.pack_into("<I", wrong_version, 0, 29)
     must_fail(bytes(wrong_version), "expected BSP v30")

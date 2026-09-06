@@ -180,6 +180,12 @@ baker never opens a WAD or adds commercial input to the public tree. Malformed
 directories, overlapping mip chains, palettes, dimensions and aggregate sizes
 fail before a bundle is written.
 
+Editor-only utility materials `aaatrigger`, `clip`, `hint`, `null`, `origin`
+and `skip` are retained in the texture metadata but their faces are excluded
+from geometry, lightmap packing and draw emission. GoldSrc uses them to mark
+invisible trigger, collision and compiler volumes; drawing them would expose
+their deliberately conspicuous 16x16 editor artwork in the game world.
+
 `TEXM` records one 32-byte image entry per original texture and `TEXP` stores
 the corresponding RGBA8 rows. Every image begins at a 256-byte boundary and
 every row pitch is a multiple of 256 bytes. Images remain separate rather than
@@ -197,10 +203,11 @@ AMD headers are not published; the field positions are the narrow independently
 reviewable subset of Mesa's MIT-licensed `ac_descriptors.c` and
 `gfx10-rsrc.json` definitions.
 
-The private reference map now bakes reproducibly to 7,151,360 bytes with 164
+The private reference map now bakes reproducibly to 7,056,384 bytes with 164
 base textures occupying 4,780,032 pitched bytes and requiring 3,936 descriptor
-DWORDs. Two independent bakes produced SHA-256
-`97678857960abbae8933dc4851ae0f11ba3aadb3b1b4dde6749d5fbaf9a089f6`.
+DWORDs. Its 84 `aaatrigger` faces are omitted, leaving 16,893 vertices, 29,013
+indices and 3,611 map draws. Two independent bakes produced SHA-256
+`ef9661dbfaad03bcefef4e07707ebc21cc8a13812a7e63bc8e58a408ae8ab42b`.
 This gate establishes base-image decoding and descriptor-table construction;
 the next gate consumes those tables in the native `base * lightmap` pipeline
 and carries the changed command stream through the 60,000-frame soak.
@@ -260,12 +267,17 @@ passes that validator.
 
 On the reference Ubuntu/PS5 setup, Chiaki owns interactive input while its
 Remote Play session is open and maps the workstation keyboard to the console.
-Taking the physical DualSense to play directly on the PS5 closes only the
-`Chiaki | Stream` session/window and transfers control to the console; the main
-Chiaki client remains open and can start streaming again through the existing
-registered console entry. Consequently, visual capture and physical-controller
-exercise are deliberately sequential: inspect or capture through the stream,
-then let the operator take the DualSense and judge the remaining soak through
-`ps5log/1`. If a moved-camera Remote Play image is required, start the stream
-again from the still-open client after the finite run. This workflow never
-pairs, re-registers or synthesizes input.
+Taking the physical DualSense to play directly on the PS5 disconnects the
+Remote Play session and transfers control to the console, but does not
+immediately close the `Chiaki | Stream` window. That window remains black with
+a `Session has quit` dialog until the operator clicks `OK`; only then does the
+stream window close. The main Chiaki client remains open and can start a new
+stream through the existing registered console entry.
+
+Consequently, visual capture and physical-controller exercise are deliberately
+sequential: inspect or capture through the stream, let the operator take the
+DualSense and judge the remaining soak through `ps5log/1`, acknowledge the
+disconnect dialog, then restart streaming from the main client if another
+image is required. Automation must not assume that session disconnection
+implies window disappearance or dismiss the operator-visible dialog without an
+explicit request. This workflow never pairs, re-registers or synthesizes input.

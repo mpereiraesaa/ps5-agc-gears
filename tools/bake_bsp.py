@@ -52,6 +52,10 @@ ATLAS_GUTTER = 1
 IMAGE_FORMAT_RGBA8_UNORM = 1
 TEXTURE_FLAG_TRANSPARENT = 1
 TEXTURE_FLAG_FALLBACK = 2
+TEXTURE_FLAG_NODRAW = 4
+NODRAW_TEXTURE_NAMES = frozenset((
+    b"aaatrigger", b"clip", b"hint", b"null", b"origin", b"skip",
+))
 
 
 class BakeError(ValueError):
@@ -191,6 +195,8 @@ def _parse_base_textures(data: bytes, lump: Lump) -> list[BaseTexture]:
         if name_hash == 0:
             raise BakeError(f"miptex {index} has an unsupported zero name hash")
         flags = TEXTURE_FLAG_TRANSPARENT if name.startswith(b"{") else 0
+        if name.lower() in NODRAW_TEXTURE_NAMES:
+            flags |= TEXTURE_FLAG_NODRAW
         if offsets[0] == 0:
             if any(offsets):
                 raise BakeError(f"miptex {index} has an incomplete mip chain")
@@ -400,10 +406,13 @@ def _face_geometry(face_index: int, face: Face,
 
 
 def _lightmap_atlas(faces: list[Face], geometry: list[FaceGeometry],
-                    lighting: bytes) -> tuple[bytes, bytes, list[AtlasPlacement | None]]:
+                    lighting: bytes, renderable: list[bool] | None = None
+                    ) -> tuple[bytes, bytes, list[AtlasPlacement | None]]:
     lit_faces: list[int] = []
     sizes: list[tuple[int, int]] = []
     for face_index, (face, shape) in enumerate(zip(faces, geometry)):
+        if renderable is not None and not renderable[face_index]:
+            continue
         style_count = next((index for index, style in enumerate(face.styles)
                             if style == 255), len(face.styles))
         if face.light_offset < 0:
@@ -508,6 +517,7 @@ def bake(data: bytes) -> bytes:
              lumps[LUMP_ENTITIES].offset + lumps[LUMP_ENTITIES].size])
 
     geometry: list[FaceGeometry] = []
+    renderable: list[bool] = []
     for face_index, face in enumerate(faces):
         if face.texinfo < 0 or face.texinfo >= len(texinfo):
             raise BakeError(f"face {face_index} texinfo is invalid")
@@ -516,8 +526,10 @@ def bake(data: bytes) -> bytes:
             raise BakeError(f"face {face_index} miptex is invalid")
         geometry.append(_face_geometry(face_index, face, vertices, edges,
                                        surfedges, texture))
+        renderable.append(
+            not (base_textures[texture.miptex].flags & TEXTURE_FLAG_NODRAW))
     light_header, light_pixels, light_placements = _lightmap_atlas(
-        faces, geometry, lighting)
+        faces, geometry, lighting, renderable)
     atlas_width, atlas_height, _pitch, _format = IMAGE.unpack(light_header)
 
     vertex_blob = bytearray()
@@ -526,6 +538,8 @@ def bake(data: bytes) -> bytes:
     emitted_vertices = 0
     emitted_indices = 0
     for face_index, (face, shape) in enumerate(zip(faces, geometry)):
+        if not renderable[face_index]:
+            continue
         texture = texinfo[face.texinfo]
         width, height = texture_sizes[texture.miptex]
         if emitted_vertices + len(shape.polygon) > MAX_INDEXED_VERTICES:

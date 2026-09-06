@@ -42,6 +42,7 @@ typedef struct BspBundleImage {
 enum {
     BSP_BUNDLE_TEXTURE_TRANSPARENT = 1u,
     BSP_BUNDLE_TEXTURE_FALLBACK = 2u,
+    BSP_BUNDLE_TEXTURE_NODRAW = 4u,
 };
 
 typedef struct BspBundleTexture {

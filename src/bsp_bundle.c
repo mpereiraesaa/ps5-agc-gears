@@ -157,12 +157,13 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
     }
     if (!!texture_metadata_chunk != !!texture_pixels_chunk)
         return BSP_BUNDLE_GEOMETRY_INVALID;
+    const BspBundleTexture *textures = 0;
     if (texture_metadata_chunk) {
         if (texture_metadata_chunk->stride != sizeof(BspBundleTexture) ||
             texture_pixels_chunk->stride != 1u ||
             (texture_pixels_chunk->offset & 255u) != 0u)
             return BSP_BUNDLE_GEOMETRY_INVALID;
-        const BspBundleTexture *const textures = (const BspBundleTexture *)(
+        textures = (const BspBundleTexture *)(
             data + texture_metadata_chunk->offset);
         for (uint32_t index = 0; index < texture_metadata_chunk->count; ++index) {
             const BspBundleTexture *const texture = &textures[index];
@@ -172,7 +173,8 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
                 (texture->row_pitch & 255u) != 0u ||
                 texture->format != BSP_BUNDLE_IMAGE_RGBA8_UNORM ||
                 (texture->flags & ~(BSP_BUNDLE_TEXTURE_TRANSPARENT |
-                                    BSP_BUNDLE_TEXTURE_FALLBACK)) != 0u ||
+                                    BSP_BUNDLE_TEXTURE_FALLBACK |
+                                    BSP_BUNDLE_TEXTURE_NODRAW)) != 0u ||
                 texture->name_hash == 0u ||
                 texture->height > UINT32_MAX / texture->row_pitch ||
                 texture->bytes != texture->height * texture->row_pitch ||
@@ -205,7 +207,9 @@ int bsp_bundle_open(const void *opaque, size_t bytes, BspBundleView *view)
             (lightmap_header_chunk && draw->lightmap != 0u &&
              draw->lightmap != UINT32_MAX) ||
             (texture_metadata_chunk &&
-             draw->base_texture >= texture_metadata_chunk->count) ||
+             (draw->base_texture >= texture_metadata_chunk->count ||
+              (textures[draw->base_texture].flags &
+               BSP_BUNDLE_TEXTURE_NODRAW) != 0u)) ||
             (index > 0u && (draw[-1].base_texture > draw->base_texture ||
              (draw[-1].base_texture == draw->base_texture &&
               draw[-1].face_id >= draw->face_id))))
