@@ -95,6 +95,7 @@ Useful references:
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — renderer structure
 - [`docs/BACKEND_PROVENANCE.md`](docs/BACKEND_PROVENANCE.md) — source provenance boundary
 - [`docs/HARDWARE_VALIDATION.md`](docs/HARDWARE_VALIDATION.md) — hardware evidence
+- [`docs/BSP_RESOURCE_FOUNDATION_PHASE2.md`](docs/BSP_RESOURCE_FOUNDATION_PHASE2.md) — fence-retired resources and transient rendering
 - [`docs/TELEMETRY.md`](docs/TELEMETRY.md) — runtime observability contract
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — development workflow
 - [`docs/RELEASING.md`](docs/RELEASING.md) — reproducible releases

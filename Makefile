@@ -4,7 +4,7 @@ BUILD := build/host
 
 .PHONY: all test shaders bsp-bundle bsp-inspect native native-release \
 	bsp-native-release bsp-noclip-native-release \
-	bsp-textured-native-release audit clean
+	bsp-textured-native-release bsp-resource-native-release audit clean
 all: test audit
 
 $(BUILD):
@@ -55,7 +55,9 @@ $(eval $(call test_rule,test_ps5_transient_ring,tests/test_ps5_transient_ring.c 
 $(eval $(call test_rule,test_ps5_gfx1013_descriptor,tests/test_ps5_gfx1013_descriptor.c src/ps5_gfx1013_descriptor.c,))
 $(eval $(call test_rule,test_ps5_cache_contract,tests/test_ps5_cache_contract.c src/ps5_cache_contract.c src/ps5_gpu_span.c,))
 $(eval $(call test_rule,test_ps5_transient_table,tests/test_ps5_transient_table.c src/ps5_transient_table.c src/ps5_transient_ring.c src/ps5_gpu_span.c,))
-$(eval $(call test_rule,inspect_bsp_bundle,tools/inspect_bsp_bundle.c src/bsp_bundle.c src/bsp_texture_descriptor.c,-Isrc))
+$(eval $(call test_rule,test_bsp_resource_frame,tests/test_bsp_resource_frame.c src/bsp_resource_frame.c src/bsp_flat_scene.c src/bsp_texture_descriptor.c src/ps5_gfx1013_descriptor.c src/ps5_transient_table.c src/ps5_transient_ring.c src/ps5_gpu_span.c,-lm))
+$(eval $(call test_rule,test_bsp_resource_draw,tests/test_bsp_resource_draw.c src/bsp_resource_draw.c src/ps5_gpu_span.c,))
+$(eval $(call test_rule,inspect_bsp_bundle,tools/inspect_bsp_bundle.c src/bsp_bundle.c src/bsp_texture_descriptor.c src/ps5_gfx1013_descriptor.c,-Isrc))
 
 TESTS := test_gears_mesh test_gears_scene test_gears_frame_tracker \
 	test_gears_draw_compose test_gears_animation test_gears_telemetry \
@@ -70,7 +72,7 @@ TESTS := test_gears_mesh test_gears_scene test_gears_frame_tracker \
 	test_bsp_texture_descriptor test_bsp_textured_draw test_ps5_bump_allocator \
 	test_ps5_resource_pool test_ps5_transient_ring \
 	test_ps5_gfx1013_descriptor test_ps5_cache_contract \
-	test_ps5_transient_table
+	test_ps5_transient_table test_bsp_resource_frame test_bsp_resource_draw
 
 test: $(addprefix $(BUILD)/,$(TESTS))
 	@set -e; for test in $^; do $$test; done
@@ -83,6 +85,7 @@ test: $(addprefix $(BUILD)/,$(TESTS))
 	python3 tests/test_bake_bsp.py
 	python3 tests/test_validate_bsp_noclip_evidence.py
 	python3 tests/test_validate_bsp_textured_evidence.py
+	python3 tests/test_validate_bsp_resource_evidence.py
 	rm -rf build tools/__pycache__ tests/__pycache__
 
 bsp-bundle: $(BUILD)/inspect_bsp_bundle
@@ -149,6 +152,10 @@ bsp-noclip-native-release: bsp-bundle
 bsp-textured-native-release: bsp-bundle
 	BSP_BUNDLE="$(CURDIR)/build/bsp/map.ps5bsp" BSP_NOCLIP=1 \
 		BSP_TEXTURED=1 bash tools/build_native.sh
+
+bsp-resource-native-release: bsp-bundle
+	BSP_BUNDLE="$(CURDIR)/build/bsp/map.ps5bsp" BSP_NOCLIP=1 \
+		BSP_TEXTURED=1 BSP_RESOURCE_FOUNDATION=1 bash tools/build_native.sh
 
 audit:
 	python3 tools/audit_publication.py

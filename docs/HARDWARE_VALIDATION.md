@@ -5,6 +5,15 @@ They are not compatibility claims for other firmware or consoles. Run logs and
 captures live in the private parent laboratory; this public boundary records
 only sanitized identifiers, hashes, outcomes and known limitations.
 
+## Phase 2 resource-foundation status
+
+The Phase 2 source and signed private `c1a0` artifact build successfully, but no
+hardware result is claimed until its 60,000-frame manifest passes
+`tools/validate_bsp_resource_evidence.py`. The gate is unattended: it reuses the
+already proven noclip input path only for connected/read-error continuity and
+does not ask the operator to repeat DualSense movement or Remote Play handoff.
+See `BSP_RESOURCE_FOUNDATION_PHASE2.md` for the exact acceptance contract.
+
 ## Continuous production-runtime evidence
 
 The production lifecycle has no frame limit and is closed by the PS5

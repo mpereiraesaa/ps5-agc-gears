@@ -117,6 +117,35 @@ def main() -> None:
     if ("bsp-textured-native-release" not in makefile or
             "BSP_TEXTURED=1" not in makefile):
         raise SystemExit("BSP textured release target missing")
+    for item in (
+        "BSP_RESOURCE_FOUNDATION requires BSP_TEXTURED=1",
+        "-DPS5_RESOURCE_FOUNDATION=1",
+        "src/bsp_resource_frame.c", "src/bsp_resource_draw.c",
+        "src/ps5_resource_pool.c", "src/ps5_transient_ring.c",
+        "src/ps5_cache_contract.c",
+    ):
+        if item not in builder:
+            raise SystemExit(f"resource-foundation native build contract missing: {item}")
+    for item in (
+        "BSP_RESOURCE_BOOT schema=1 target=gfx1013",
+        "RESOURCE_HEAP_READY bytes=%llu allocations=4",
+        "RESOURCE_FRAME_READY frame=%llu slot=%u",
+        "RESOURCE_FRAME_SEALED frame=%llu slot=%u token=%llu",
+        "RESOURCE_FRAME_RETIRED frame=%llu slot=%u token=%llu",
+        "RESOURCE_RING_RETIRED slots=2 reusable=%s tokens=exact",
+        "BSP_RESOURCE_SOAK_COMPLETE frames=%llu connected_frames=%llu",
+        "RESOURCE_POOL_RETIRED token=%llu reclaimed=%u",
+        'ps5log_close("bsp-resource-soak-complete")',
+    ):
+        if item not in source:
+            raise SystemExit(f"resource-foundation runtime contract missing: {item}")
+    for item in ('bsp_resource.gs.bin', 'bsp_resource.ps.bin',
+                 'bsp_overlay.gs.bin', 'bsp_overlay.ps.bin'):
+        if item not in assets:
+            raise SystemExit(f"resource-foundation shader asset missing: {item}")
+    if ("bsp-resource-native-release" not in makefile or
+            "BSP_RESOURCE_FOUNDATION=1" not in makefile):
+        raise SystemExit("resource-foundation release target missing")
     print("native telemetry and teardown source contract passed")
 
 

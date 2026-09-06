@@ -68,7 +68,38 @@ def main() -> int:
     for value in forbidden:
         if value in textured:
             raise SystemExit(f"BSP textured shader contains forbidden value: {value}")
-    print("shader source contract passed: gears, BSP flat and BSP textured ABIs")
+    resource = (ROOT / "shaders/bsp_resource.pipe").read_text(encoding="utf-8")
+    resource_required = (
+        "layout(set = 0, binding = 0, std140) uniform FrameConstants",
+        "mat4 mvp;",
+        "vec4 control;",
+        "vec4 debug_values[3];",
+        "userDataNode[0].sizeInDwords = 1",
+        "userDataNode[0].next[0].type = DescriptorConstBuffer",
+        "userDataNode[1].type = IndirectUserDataVaPtr",
+        "userDataNode[2].type = DescriptorTableVaPtr",
+        "binding[0].stride = 32",
+    )
+    for value in resource_required:
+        if value not in resource:
+            raise SystemExit(f"BSP resource shader contract is missing: {value}")
+    overlay = (ROOT / "shaders/bsp_overlay.pipe").read_text(encoding="utf-8")
+    overlay_required = (
+        "layout(location = 0) in vec2 in_position;",
+        "layout(location = 1) in vec4 in_color;",
+        "userDataNode[0].sizeInDwords = 1",
+        "userDataNode[0].type = IndirectUserDataVaPtr",
+        "binding[0].stride = 24",
+        "attribute[1].offset = 8",
+    )
+    for value in overlay_required:
+        if value not in overlay:
+            raise SystemExit(f"BSP overlay shader contract is missing: {value}")
+    for name, pipe in (("resource", resource), ("overlay", overlay)):
+        for value in forbidden:
+            if value in pipe:
+                raise SystemExit(f"BSP {name} shader contains forbidden value: {value}")
+    print("shader source contract passed: gears, BSP flat/textured/resource/overlay ABIs")
     return 0
 
 

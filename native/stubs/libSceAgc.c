@@ -69,3 +69,10 @@ uint32_t *sceAgcDcbDmaData(
     UNUSED(byte_count); UNUSED(raw_wait); UNUSED(disable_write_confirm);
     UNUSED(cp_sync); return 0;
 }
+uint32_t *sceAgcDcbAcquireMem(
+    void *writer, uint8_t engine, uint32_t cb_db_op, uint32_t gcr_control,
+    const volatile void *base, uint64_t size_bytes, uint32_t poll_cycles)
+{
+    UNUSED(writer); UNUSED(engine); UNUSED(cb_db_op); UNUSED(gcr_control);
+    UNUSED(base); UNUSED(size_bytes); UNUSED(poll_cycles); return 0;
+}

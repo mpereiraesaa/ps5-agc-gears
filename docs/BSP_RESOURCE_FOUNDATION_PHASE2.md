@@ -1,0 +1,115 @@
+# BSP resource foundation — Phase 2
+
+Phase 2 turns the validated `c1a0` textured viewer into a resource-managed
+renderer. It preserves the Phase 1 map, noclip, texture and lightmap paths while
+changing how GPU-visible memory, per-frame data, descriptors and pipeline
+selection are owned.
+
+## Runtime ownership model
+
+The resource build uses one aligned direct-memory heap for four allocations:
+
+| Allocation | Lifetime | Retirement rule |
+| --- | --- | --- |
+| BSP bundle and immutable scene data | Whole run | Deferred to the last completed frame token |
+| Shader headers, code and pipeline registers | Whole run | Deferred to the last completed frame token |
+| D32 depth target and guard | Whole run | Deferred to the last completed frame token |
+| Two-slot transient arena | Per frame inside whole-run allocation | A slot is reused only after its exact fence and VideoOut token complete |
+
+`ps5_resource_pool` is a bounds-checked, aligned first-fit suballocator with
+generation-tagged handles. Releasing a submitted allocation changes it to
+`RETIRING`; reclamation is rejected unless the caller supplies the same nonzero
+token and explicit completion proof. The older bump allocator remains only for
+the independently reproducible Phase 1 host contract. The Phase 2 native build
+does not use it.
+
+`ps5_transient_ring` divides the transient allocation into two independently
+owned slots matching the two display buffers. A slot moves through
+`EMPTY -> OPEN -> SEALED(token) -> EMPTY`. An open, unsubmitted slot may be
+aborted. A sealed slot cannot be reset or reused on a fence alone; it requires
+the exact VideoOut token observed by the frame-completion state machine as well.
+
+## Per-frame resource packet
+
+Every frame rebuilds these objects in its open transient slot:
+
+- one 128-byte map constant buffer and one 128-byte clear constant buffer;
+- one V# descriptor table for each constant buffer;
+- map and clear vertex V# tables;
+- all 164 base/lightmap T#/S# tables (3,936 DWORDs for the private reference
+  bundle);
+- four 24-byte overlay vertices, six uint16 indices and their V# table.
+
+The map constants contain a 4x4 camera matrix, a control vector and three debug
+vectors. The descriptor is a public-source GFX10.3 raw constant V#; vertex V#,
+linear RGBA8 T# and sampler S# construction also lives behind named builders.
+Every resource and table is checked against the complete GPU mapping before a
+command is emitted.
+
+`bsp_resource.pipe` consumes the constant-buffer table, vertex table and
+base/lightmap table. `bsp_overlay.pipe` consumes a separate transient vertex
+table and draws a small pulsing green quad. `pipeline_permutations.json` is the
+source of truth for both pipeline identities and their application SGPR word
+counts; generated metadata is rejected when it disagrees with the manifests.
+
+## Cache and synchronization contract
+
+CPU-written transient bytes are flushed over an aligned 256-byte range, then
+an eight-DWORD `AcquireMem` packet is emitted before any resource draw. Its GCR
+control value `0x00004380` invalidates GLK, GLV, GL1 and GL2 for the CPU-to-GPU
+transition. Submission ends with the existing release-fence packet and exact
+VideoOut flip token.
+
+GPU-to-CPU completion is accepted only when both conditions hold:
+
+1. the matching slot fence reads zero;
+2. VideoOut reports the exact 48-bit token submitted for that frame.
+
+Only then does the native adapter publish the completed token used to reopen
+that transient slot. After the final drain, both slots are reopened and aborted
+as an explicit reuse proof. The four persistent allocations are then marked
+retiring and reclaimed against the last completed token.
+
+## Build and host gates
+
+The private resource artifact is built with:
+
+```sh
+PS5LOG_DEV_CONF=/private/path/dev.conf \
+make bsp-resource-native-release \
+  BSP_INPUT=/private/path/c1a0.bsp \
+  AMDLLPC=/path/to/amdllpc \
+  LLVM_READELF=/path/to/llvm-readelf
+```
+
+`BSP_RESOURCE_FOUNDATION=1` fails closed unless both the textured and noclip
+paths are enabled. `make test` covers allocation fragmentation, stale handles,
+premature reclamation, ring exhaustion/token mismatch, descriptor words,
+constant/table layouts, transient overlay composition, cache-range alignment,
+AcquireMem size and generated pipeline metadata. `make audit` keeps all private
+maps, bundles, logs, configuration and generated binaries outside the public
+boundary.
+
+## Hardware acceptance
+
+The 60,000-frame run is unattended. Phase 1 already proves physical DualSense
+movement, so Phase 2 requires a connected sample on every frame and zero pad
+read errors but does not repeat movement or Remote Play handoff. Chiaki remains
+on its existing registered console entry and is not paired or reinitialized.
+
+The run is accepted only if `validate_bsp_resource_evidence.py` proves:
+
+- exact title, application, boot and private bundle identity;
+- gap-free structured `ps5log/1` with no raw, oversized or `ERROR` records;
+- two resource pipelines and four heap allocations;
+- per-frame constant, texture-table and overlay cardinality at frames 0 and
+  59,999, with complete GPU spans and GCR `0x00004380`;
+- matching seal, zero-fence retirement and exact VideoOut token bookends;
+- 60,000 completed and connected frames with no renderer, pad or present-budget
+  errors;
+- visible pixels, intact guards, both transient slots reusable and all four
+  persistent allocations reclaimed;
+- a clean `bsp-resource-soak-complete` BYE.
+
+Until such a manifest is recorded, the signed native build is build evidence,
+not hardware acceptance.

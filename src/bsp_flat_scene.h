@@ -15,5 +15,7 @@ int bsp_flat_build_clear(BspFlatDraw *out, BspBundleVertex vertices[3],
 int bsp_flat_update_camera(BspFlatDraw *draws, uint32_t draw_count,
                            const float position[3], const float forward[3],
                            float aspect_ratio);
+int bsp_flat_camera_matrix(float out[16], const float position[3],
+                           const float forward[3], float aspect_ratio);
 
 #endif

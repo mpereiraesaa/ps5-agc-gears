@@ -162,14 +162,27 @@ int bsp_flat_update_camera(BspFlatDraw *draws, uint32_t draw_count,
     if (!draws || draw_count == 0u || !position || !forward ||
         !(aspect_ratio > 0.0f) || !__builtin_isfinite(aspect_ratio))
         return -1;
+    float mvp[16];
+    if (bsp_flat_camera_matrix(mvp, position, forward, aspect_ratio) != 0)
+        return -2;
+    for (uint32_t draw = 0; draw < draw_count; ++draw)
+        for (unsigned word = 0; word < 16u; ++word)
+            draws[draw].sh_words[word] = bits(mvp[word]);
+    return 0;
+}
+
+int bsp_flat_camera_matrix(float out[16], const float position[3],
+                           const float forward[3], float aspect_ratio)
+{
+    if (!out || !position || !forward || !(aspect_ratio > 0.0f) ||
+        !__builtin_isfinite(aspect_ratio))
+        return -1;
     Matrix4 view;
     if (view_matrix(position, forward, &view) != 0)
         return -2;
     const Matrix4 projection = perspective(1.309f, aspect_ratio, 1.0f,
                                            8192.0f);
     const Matrix4 mvp = multiply(projection, view);
-    for (uint32_t draw = 0; draw < draw_count; ++draw)
-        for (unsigned word = 0; word < 16u; ++word)
-            draws[draw].sh_words[word] = bits(mvp.v[word]);
+    memcpy(out, mvp.v, sizeof(mvp.v));
     return 0;
 }

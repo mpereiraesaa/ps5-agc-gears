@@ -12,13 +12,19 @@
 #include "../src/bsp_runtime_plan.h"
 #include "../src/bsp_texture_descriptor.h"
 #include "../src/bsp_textured_draw.h"
+#include "../src/bsp_resource_draw.h"
+#include "../src/bsp_resource_frame.h"
 #include "../src/ps5_agc_submit.h"
+#include "../src/ps5_cache_contract.h"
 #include "../src/ps5_color_target.h"
 #include "../src/ps5_depth_target.h"
 #include "../src/ps5_event_adapter.h"
+#include "../src/ps5_gfx1013_descriptor.h"
 #include "../src/ps5_pipeline.h"
+#include "../src/ps5_resource_pool.h"
 #include "../src/ps5_shader_header.h"
 #include "../src/ps5_submission.h"
+#include "../src/ps5_transient_ring.h"
 #include "../src/ps5_surface.h"
 #include "../src/ps5_videoout.h"
 #include "ps5_agc_native.h"
@@ -29,6 +35,11 @@
 #include "bsp_flat_shader_metadata.h"
 #ifdef PS5_BSP_TEXTURED
 #include "bsp_textured_shader_metadata.h"
+#ifdef PS5_RESOURCE_FOUNDATION
+#include "bsp_resource_shader_metadata.h"
+#include "bsp_overlay_shader_metadata.h"
+#include "pipeline_permutations.h"
+#endif
 #endif
 #endif
 
@@ -48,6 +59,12 @@ extern const uint8_t ps5_bsp_flat_ps_start[], ps5_bsp_flat_ps_end[];
 #ifdef PS5_BSP_TEXTURED
 extern const uint8_t ps5_bsp_textured_gs_start[], ps5_bsp_textured_gs_end[];
 extern const uint8_t ps5_bsp_textured_ps_start[], ps5_bsp_textured_ps_end[];
+#ifdef PS5_RESOURCE_FOUNDATION
+extern const uint8_t ps5_bsp_resource_gs_start[], ps5_bsp_resource_gs_end[];
+extern const uint8_t ps5_bsp_resource_ps_start[], ps5_bsp_resource_ps_end[];
+extern const uint8_t ps5_bsp_overlay_gs_start[], ps5_bsp_overlay_gs_end[];
+extern const uint8_t ps5_bsp_overlay_ps_start[], ps5_bsp_overlay_ps_end[];
+#endif
 #endif
 #endif
 
@@ -68,6 +85,17 @@ enum {
     LINKED_UC_OFFSET = 0x2200u,
     PIPELINE_OFFSET = 0x3000u,
     DEPTH_REGISTERS_OFFSET = 0x3e00u,
+#ifdef PS5_RESOURCE_FOUNDATION
+    OVERLAY_GS_HEADER_OFFSET = 0x4000u,
+    OVERLAY_PS_HEADER_OFFSET = 0x4200u,
+    OVERLAY_GS_CODE_OFFSET = 0x5000u,
+    OVERLAY_PS_CODE_OFFSET = 0x5200u,
+    OVERLAY_LINKED_CX_OFFSET = 0x6000u,
+    OVERLAY_LINKED_UC_OFFSET = 0x6200u,
+    OVERLAY_PIPELINE_OFFSET = 0x7000u,
+    RESOURCE_TRANSIENT_BYTES = 0x40000u,
+    RESOURCE_HEAP_ALIGNMENT = 0x10000u,
+#endif
     GEAR0_OFFSET = 0x4000u,
     GEAR1_OFFSET = 0x10000u,
     GEAR2_OFFSET = 0x16000u,
@@ -106,6 +134,17 @@ struct native_resources {
     int64_t depth_offset;
     void *bsp;
     int64_t bsp_offset;
+#ifdef PS5_RESOURCE_FOUNDATION
+    void *resource_heap;
+    int64_t resource_heap_offset;
+    size_t resource_heap_bytes;
+    void *transient;
+    Ps5ResourcePool resource_pool;
+    Ps5ResourceAllocation bsp_allocation;
+    Ps5ResourceAllocation shader_allocation;
+    Ps5ResourceAllocation depth_allocation;
+    Ps5ResourceAllocation transient_allocation;
+#endif
     size_t command_bytes;
     size_t bsp_bytes;
     int32_t pad_handle;
@@ -123,6 +162,10 @@ struct native_resources {
     int depth_mapped;
     int bsp_allocated;
     int bsp_mapped;
+#ifdef PS5_RESOURCE_FOUNDATION
+    int resource_heap_allocated;
+    int resource_heap_mapped;
+#endif
     int pad_opened;
 };
 
@@ -131,6 +174,17 @@ struct native_renderer {
     uint32_t *cursor[2];
     volatile uint64_t *fences[2];
     struct ps5_pipeline_registers *pipelines[2];
+#ifdef PS5_RESOURCE_FOUNDATION
+    struct ps5_pipeline_registers *overlay_pipelines[2];
+    Ps5TransientRing transient_ring;
+    BspResourceFrame resource_frames[2];
+    Ps5CpuToGpuPlan cache_plans[2];
+    uint64_t completed_tokens[2];
+    uint64_t last_completed_token;
+    uint64_t overlay_draw_modifier;
+    BspBundleVertex *clear_vertices;
+    uint16_t *clear_indices;
+#endif
     ps5_agc_register *depth_registers;
     GearsSceneDraw clear_draw;
     uint32_t srd_tables[GEARS_SCENE_DRAW_COUNT];
@@ -213,6 +267,79 @@ static int map_command(void)
     return 0;
 }
 
+#ifdef PS5_RESOURCE_FOUNDATION
+static int add_aligned(size_t *total, size_t bytes, size_t alignment)
+{
+    if (!total || !bytes || !alignment ||
+        (alignment & (alignment - 1u)) != 0u ||
+        *total > SIZE_MAX - (alignment - 1u))
+        return -1;
+    const size_t aligned = (*total + alignment - 1u) & ~(alignment - 1u);
+    if (bytes > SIZE_MAX - aligned)
+        return -1;
+    *total = aligned + bytes;
+    return 0;
+}
+
+static int init_resource_heap(size_t bsp_bytes)
+{
+    size_t heap_bytes = 0u;
+    if (add_aligned(&heap_bytes, bsp_bytes,
+                    BSP_RUNTIME_ALLOCATION_ALIGNMENT) != 0 ||
+        add_aligned(&heap_bytes, SHADER_BYTES, SHADER_ALIGNMENT) != 0 ||
+        add_aligned(&heap_bytes, DEPTH_ALLOCATION_BYTES,
+                    DEPTH_ALIGNMENT) != 0 ||
+        add_aligned(&heap_bytes, RESOURCE_TRANSIENT_BYTES,
+                    RESOURCE_HEAP_ALIGNMENT) != 0 ||
+        add_aligned(&heap_bytes, 64u, RESOURCE_HEAP_ALIGNMENT) != 0)
+        return -1;
+    heap_bytes = (heap_bytes + RESOURCE_HEAP_ALIGNMENT - 1u) &
+                 ~(size_t)(RESOURCE_HEAP_ALIGNMENT - 1u);
+    int result = allocate_direct(&resources.resource_heap,
+                                 &resources.resource_heap_offset,
+                                 heap_bytes, RESOURCE_HEAP_ALIGNMENT);
+    if (result != 0)
+        return result;
+    resources.resource_heap_allocated = resources.resource_heap_mapped = 1;
+    resources.resource_heap_bytes = heap_bytes;
+    memset(resources.resource_heap, 0, heap_bytes);
+    if (ps5_resource_pool_init(&resources.resource_pool,
+                               resources.resource_heap, heap_bytes) != 0 ||
+        ps5_resource_pool_allocate(
+            &resources.resource_pool, bsp_bytes,
+            BSP_RUNTIME_ALLOCATION_ALIGNMENT,
+            &resources.bsp_allocation) != 0 ||
+        ps5_resource_pool_allocate(
+            &resources.resource_pool, SHADER_BYTES, SHADER_ALIGNMENT,
+            &resources.shader_allocation) != 0 ||
+        ps5_resource_pool_allocate(
+            &resources.resource_pool, DEPTH_ALLOCATION_BYTES,
+            DEPTH_ALIGNMENT, &resources.depth_allocation) != 0 ||
+        ps5_resource_pool_allocate(
+            &resources.resource_pool, RESOURCE_TRANSIENT_BYTES,
+            RESOURCE_HEAP_ALIGNMENT,
+            &resources.transient_allocation) != 0)
+        return -2;
+    resources.bsp = ps5_resource_pool_pointer(
+        &resources.resource_pool, &resources.bsp_allocation);
+    resources.shader = ps5_resource_pool_pointer(
+        &resources.resource_pool, &resources.shader_allocation);
+    resources.depth = ps5_resource_pool_pointer(
+        &resources.resource_pool, &resources.depth_allocation);
+    resources.transient = ps5_resource_pool_pointer(
+        &resources.resource_pool, &resources.transient_allocation);
+    if (!resources.bsp || !resources.shader || !resources.depth ||
+        !resources.transient ||
+        ((uintptr_t)resources.resource_heap >> 32) != UINT64_C(2) ||
+        ps5_transient_ring_init(
+            &renderer.transient_ring, resources.transient,
+            RESOURCE_TRANSIENT_BYTES, 2u, 256u) != 0)
+        return -3;
+    resources.bsp_bytes = bsp_bytes;
+    return 0;
+}
+#endif
+
 #ifdef PS5_BSP_VIEWER
 static int read_exact(int fd, void *buffer, size_t bytes)
 {
@@ -256,15 +383,22 @@ static int load_bsp_bundle(void)
         (void)close(fd);
         return -3;
     }
-    int result = allocate_direct(&resources.bsp, &resources.bsp_offset,
-                                 upper.allocation_bytes,
-                                 BSP_RUNTIME_ALLOCATION_ALIGNMENT);
+    int result;
+#ifdef PS5_RESOURCE_FOUNDATION
+    result = init_resource_heap(upper.allocation_bytes);
+#else
+    result = allocate_direct(&resources.bsp, &resources.bsp_offset,
+                             upper.allocation_bytes,
+                             BSP_RUNTIME_ALLOCATION_ALIGNMENT);
+#endif
     if (result != 0) {
         (void)close(fd);
         return result;
     }
+#ifndef PS5_RESOURCE_FOUNDATION
     resources.bsp_allocated = resources.bsp_mapped = 1;
     resources.bsp_bytes = upper.allocation_bytes;
+#endif
     memset(resources.bsp, 0, resources.bsp_bytes);
     result = read_exact(fd, resources.bsp, file_bytes);
     const int close_result = close(fd);
@@ -293,12 +427,9 @@ static int write_vertex_srd(uint32_t table[4], const void *vertices,
     if (!table || !vertices || vertex_count == 0u ||
         ((uintptr_t)table >> 32) != UINT64_C(2))
         return -1;
-    const uintptr_t address = (uintptr_t)vertices;
-    table[0] = (uint32_t)address;
-    table[1] = (uint32_t)((address >> 32) & 0xffffu) | (32u << 16);
-    table[2] = vertex_count;
-    table[3] = UINT32_C(0x11014fac);
-    return 0;
+    return ps5_gfx1013_build_vsharp(table, (uintptr_t)vertices,
+                                    sizeof(BspBundleVertex),
+                                    vertex_count);
 }
 
 static int prepare_bsp_scene(void)
@@ -310,6 +441,10 @@ static int prepare_bsp_scene(void)
         renderer.bsp_plan.clear_vertices_offset);
     uint16_t *const clear_indices = (uint16_t *)(base +
         renderer.bsp_plan.clear_indices_offset);
+#ifdef PS5_RESOURCE_FOUNDATION
+    renderer.clear_vertices = clear_vertices;
+    renderer.clear_indices = clear_indices;
+#endif
     BspFlatDraw *const draws = (BspFlatDraw *)(base +
         renderer.bsp_plan.scene_draws_offset);
     if (write_vertex_srd(srds, renderer.bsp_bundle.vertices,
@@ -323,7 +458,7 @@ static int prepare_bsp_scene(void)
                              (float)resources.surface.width /
                                  (float)resources.surface.height) != 0)
         return -1;
-#ifdef PS5_BSP_TEXTURED
+#if defined(PS5_BSP_TEXTURED) && !defined(PS5_RESOURCE_FOUNDATION)
     uint32_t *const descriptor_tables = (uint32_t *)(base +
         renderer.bsp_plan.descriptor_tables_offset);
     uint32_t written_dwords = 0u;
@@ -398,12 +533,16 @@ static int update_noclip_camera(struct native_renderer *state,
     const float delta = frame->frame_index == 0u ? 1.0f / 60.0f
         : frame->time_seconds - state->last_camera_time;
     state->last_camera_time = frame->time_seconds;
-    if (bsp_noclip_step(&state->noclip, &input, delta) != 0 ||
+    if (bsp_noclip_step(&state->noclip, &input, delta) != 0
+#ifndef PS5_RESOURCE_FOUNDATION
+        ||
         bsp_flat_update_camera(state->bsp_draws + 1u,
             state->bsp_draw_count - 1u, state->noclip.position,
             state->noclip.forward,
             (float)state->resources->surface.width /
-                (float)state->resources->surface.height) != 0)
+                (float)state->resources->surface.height) != 0
+#endif
+        )
         return -1;
     if ((frame->frame_index + 1u) % 600u == 0u)
         (void)ps5log_printf(PS5LOG_MARK,
@@ -431,6 +570,15 @@ static const struct ps5_videoout_ops video_ops = {
     sceVideoOutUnregisterBuffers
 };
 
+#ifdef PS5_RESOURCE_FOUNDATION
+static int resource_compose_fail(struct native_renderer *state,
+                                 uint32_t slot, int result)
+{
+    (void)ps5_transient_ring_abort_unsubmitted(&state->transient_ring, slot);
+    return result;
+}
+#endif
+
 static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
 {
     struct native_renderer *state = opaque;
@@ -439,6 +587,56 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
 #ifdef PS5_BSP_NOCLIP
     if (update_noclip_camera(state, frame) != 0)
         return -9;
+#endif
+#ifdef PS5_RESOURCE_FOUNDATION
+    const uint32_t resource_slot = frame->buffer;
+    const uint64_t completed = state->completed_tokens[resource_slot];
+    if (ps5_transient_ring_begin(
+            &state->transient_ring, resource_slot, completed,
+            completed != 0u) != PS5_TRANSIENT_OK)
+        return -8;
+    if (bsp_resource_frame_build(
+            &state->resource_frames[resource_slot],
+            &state->transient_ring, resource_slot,
+            state->resources->resource_heap,
+            state->resources->resource_heap_bytes,
+            &state->bsp_bundle, state->clear_vertices,
+            state->clear_indices, state->noclip.position,
+            state->noclip.forward,
+            (float)state->resources->surface.width /
+                (float)state->resources->surface.height,
+            frame->frame_index) != 0) {
+        return resource_compose_fail(state, resource_slot, -9);
+    }
+    Ps5TransientSlot *const transient_slot =
+        &state->transient_ring.slots[resource_slot];
+    const void *const transient_begin = state->transient_ring.base +
+        transient_slot->offset;
+    if (ps5_cache_cpu_to_gpu_plan(
+            state->resources->resource_heap,
+            state->resources->resource_heap_bytes, transient_begin,
+            transient_slot->used,
+            &state->cache_plans[resource_slot]) != 0) {
+        return resource_compose_fail(state, resource_slot, -9);
+    }
+    ps5_native_cache_flush(
+        state->cache_plans[resource_slot].flush_address,
+        state->cache_plans[resource_slot].flush_bytes);
+    if (frame->frame_index == 0u ||
+        frame->frame_index + 1u == BSP_GATE_FRAME_COUNT)
+        (void)ps5log_printf(PS5LOG_MARK,
+            "RESOURCE_FRAME_READY frame=%llu slot=%u transient_bytes=%llu "
+            "constant_dwords=%u texture_descriptor_dwords=%u "
+            "overlay_vertices=%u overlay_indices=%u gcr=%08x "
+            "tables_gpu_span=true",
+            (unsigned long long)frame->frame_index, resource_slot,
+            (unsigned long long)
+                state->resource_frames[resource_slot].transient_bytes,
+            BSP_RESOURCE_CONSTANT_DWORDS,
+            state->resource_frames[resource_slot].texture_table_dwords,
+            BSP_RESOURCE_OVERLAY_VERTICES,
+            BSP_RESOURCE_OVERLAY_INDICES,
+            state->cache_plans[resource_slot].gcr_control);
 #endif
     uint32_t *const begin = state->commands[frame->buffer];
     uint32_t *const end = begin +
@@ -449,41 +647,113 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
         &cursor, (uint32_t)(end - cursor), 0u,
         state->resources->video.handle, (int32_t)frame->buffer);
     if (result != 0)
+#ifdef PS5_RESOURCE_FOUNDATION
+        return resource_compose_fail(state, resource_slot, -10);
+#else
         return -10;
+#endif
+#ifdef PS5_RESOURCE_FOUNDATION
+    result = ps5_native_acquire_mem(
+        &cursor, (uint32_t)(end - cursor),
+        state->cache_plans[resource_slot].acquire_base,
+        state->cache_plans[resource_slot].acquire_bytes,
+        state->cache_plans[resource_slot].gcr_control,
+        state->resources->resource_heap,
+        state->resources->resource_heap_bytes);
+    if (result != 0)
+        return resource_compose_fail(state, resource_slot, -10);
+#endif
     result = ps5_native_fill_depth(
         &cursor, (uint32_t)(end - cursor), state->resources->depth,
         UINT32_C(0x3f800000), DEPTH_BYTES, state->resources->depth,
         DEPTH_ALLOCATION_BYTES);
     if (result != 0)
+#ifdef PS5_RESOURCE_FOUNDATION
+        return resource_compose_fail(state, resource_slot, -11);
+#else
         return -11;
+#endif
     result = ps5_native_set_indirect(
         &cursor, (uint32_t)(end - cursor), state->depth_registers,
         PS5_DEPTH_REGISTER_COUNT, state->resources->shader, SHADER_BYTES,
         PS5_NATIVE_REGISTERS_CX);
     if (result != 0)
+#ifdef PS5_RESOURCE_FOUNDATION
+        return resource_compose_fail(state, resource_slot, -12);
+#else
         return -12;
+#endif
     struct ps5_pipeline_registers *pipeline = state->pipelines[frame->buffer];
     result = ps5_native_set_indirect(
         &cursor, (uint32_t)(end - cursor), pipeline->cx,
         PS5_PIPELINE_CX_REGISTERS, state->resources->shader, SHADER_BYTES,
         PS5_NATIVE_REGISTERS_CX);
     if (result != 0)
+#ifdef PS5_RESOURCE_FOUNDATION
+        return resource_compose_fail(state, resource_slot, -13);
+#else
         return -13;
+#endif
     result = ps5_native_set_indirect(
         &cursor, (uint32_t)(end - cursor), pipeline->uc,
         PS5_PIPELINE_UC_REGISTERS, state->resources->shader, SHADER_BYTES,
         PS5_NATIVE_REGISTERS_UC);
     if (result != 0)
+#ifdef PS5_RESOURCE_FOUNDATION
+        return resource_compose_fail(state, resource_slot, -14);
+#else
         return -14;
+#endif
     result = ps5_native_set_indirect(
         &cursor, (uint32_t)(end - cursor), pipeline->sh,
         PS5_PIPELINE_SH_REGISTERS, state->resources->shader, SHADER_BYTES,
         PS5_NATIVE_REGISTERS_SH);
     if (result != 0)
+#ifdef PS5_RESOURCE_FOUNDATION
+        return resource_compose_fail(state, resource_slot, -15);
+#else
         return -15;
+#endif
 #ifdef PS5_BSP_VIEWER
+#ifdef PS5_RESOURCE_FOUNDATION
+    BspResourceComposeResult resource_composed = {0};
+    result = bsp_resource_compose_map(
+        &cursor, end, &state->resource_frames[resource_slot],
+        &state->bsp_bundle, state->clear_indices,
+        state->resources->resource_heap,
+        state->resources->resource_heap_bytes, state->draw_modifier,
+        ps5_native_set_sh_direct, ps5_native_draw_index,
+        &resource_composed);
+    struct ps5_pipeline_registers *overlay =
+        state->overlay_pipelines[resource_slot];
+    if (result == 0)
+        result = ps5_native_set_indirect(
+            &cursor, (uint32_t)(end - cursor), overlay->cx,
+            PS5_PIPELINE_CX_REGISTERS, state->resources->shader,
+            SHADER_BYTES, PS5_NATIVE_REGISTERS_CX);
+    if (result == 0)
+        result = ps5_native_set_indirect(
+            &cursor, (uint32_t)(end - cursor), overlay->uc,
+            PS5_PIPELINE_UC_REGISTERS, state->resources->shader,
+            SHADER_BYTES, PS5_NATIVE_REGISTERS_UC);
+    if (result == 0)
+        result = ps5_native_set_indirect(
+            &cursor, (uint32_t)(end - cursor), overlay->sh,
+            PS5_PIPELINE_SH_REGISTERS, state->resources->shader,
+            SHADER_BYTES, PS5_NATIVE_REGISTERS_SH);
+    if (result == 0)
+        result = bsp_resource_compose_overlay(
+            &cursor, end, &state->resource_frames[resource_slot],
+            state->resources->resource_heap,
+            state->resources->resource_heap_bytes,
+            state->overlay_draw_modifier, ps5_native_set_sh_direct,
+            ps5_native_draw_index, &resource_composed);
+    if (result != 0 ||
+        resource_composed.map_draws != state->bsp_bundle.draw_count ||
+        resource_composed.overlay_draws != 1u)
+        return resource_compose_fail(state, resource_slot, -16);
+#elif defined(PS5_BSP_TEXTURED)
     BspFlatComposeResult composed = {0, 0};
-#ifdef PS5_BSP_TEXTURED
     result = bsp_textured_compose(
         &cursor, end, state->bsp_draws, state->bsp_texture_bindings,
         state->bsp_draw_count, state->resources->bsp,
@@ -497,6 +767,7 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
         composed.command_dwords != expected_dwords)
         return -16;
 #else
+    BspFlatComposeResult composed = {0, 0};
     result = bsp_flat_compose(
         &cursor, end, state->bsp_draws, state->bsp_draw_count,
         state->resources->bsp, state->resources->bsp_bytes,
@@ -531,6 +802,18 @@ static int frame_submit(const GearsAnimationFrame *frame, void *opaque)
         !state->cursor[frame->buffer])
         return -1;
     const unsigned slot = frame->buffer;
+#ifdef PS5_RESOURCE_FOUNDATION
+    if (ps5_transient_ring_seal(&state->transient_ring, slot,
+                                frame->token) != PS5_TRANSIENT_OK)
+        return -2;
+    if (frame->frame_index == 0u ||
+        frame->frame_index + 1u == BSP_GATE_FRAME_COUNT)
+        (void)ps5log_printf(PS5LOG_MARK,
+            "RESOURCE_FRAME_SEALED frame=%llu slot=%u token=%llu "
+            "retirement=fence+videoout",
+            (unsigned long long)frame->frame_index, slot,
+            (unsigned long long)frame->token);
+#endif
     struct ps5_present_stream stream = {
         state->commands[slot],
         state->commands[slot] +
@@ -590,6 +873,22 @@ static int frame_wait_video(const GearsAnimationFrame *frame,
         const int result = ps5_event_poll_completion(&completion, &poll);
         if (result == PS5_FRAME_DONE) {
             *observed_token = frame->token;
+#ifdef PS5_RESOURCE_FOUNDATION
+            if (!ps5_cache_gpu_to_cpu_complete(
+                    __atomic_load_n(state->fences[frame->buffer],
+                                    __ATOMIC_ACQUIRE),
+                    frame->token, *observed_token))
+                return -3;
+            state->completed_tokens[frame->buffer] = frame->token;
+            state->last_completed_token = frame->token;
+            if (frame->frame_index == 0u ||
+                frame->frame_index + 1u == BSP_GATE_FRAME_COUNT)
+                (void)ps5log_printf(PS5LOG_MARK,
+                    "RESOURCE_FRAME_RETIRED frame=%llu slot=%u token=%llu "
+                    "fence=zero videoout_token=exact",
+                    (unsigned long long)frame->frame_index, frame->buffer,
+                    (unsigned long long)frame->token);
+#endif
 #ifdef PS5_BSP_VIEWER
             if (frame->frame_index == 0u ||
                 frame->frame_index + 1u == BSP_GATE_FRAME_COUNT)
@@ -692,6 +991,28 @@ static int cleanup(void)
                          PS5_SURFACE_ALLOCATION_BYTES)) != 0)
         return result;
     resources.framebuffer_allocated = 0;
+#ifdef PS5_RESOURCE_FOUNDATION
+    if (resources.resource_heap_mapped) {
+        (void)ps5_resource_pool_release_unsubmitted(
+            &resources.resource_pool, &resources.transient_allocation);
+        (void)ps5_resource_pool_release_unsubmitted(
+            &resources.resource_pool, &resources.depth_allocation);
+        (void)ps5_resource_pool_release_unsubmitted(
+            &resources.resource_pool, &resources.shader_allocation);
+        (void)ps5_resource_pool_release_unsubmitted(
+            &resources.resource_pool, &resources.bsp_allocation);
+        if ((result = sceKernelMunmap(resources.resource_heap,
+                                      resources.resource_heap_bytes)) != 0)
+            return result;
+        resources.resource_heap_mapped = 0;
+    }
+    if (resources.resource_heap_allocated &&
+        (result = sceKernelReleaseDirectMemory(
+             resources.resource_heap_offset,
+             resources.resource_heap_bytes)) != 0)
+        return result;
+    resources.resource_heap_allocated = 0;
+#else
     if (resources.depth_mapped &&
         (result = sceKernelMunmap(resources.depth,
                                   DEPTH_ALLOCATION_BYTES)) != 0)
@@ -722,6 +1043,7 @@ static int cleanup(void)
                                                 SHADER_BYTES)) != 0)
         return result;
     resources.shader_allocated = 0;
+#endif
     if (resources.command_mapped) {
         struct ps5_batch_map_entry entry = {
             resources.command, 0, resources.command_bytes, 0xf2, 0x0c, 0, 1
@@ -783,7 +1105,9 @@ static uint64_t bright_pixel_count(const void *data, size_t bytes)
 
 static void park_complete(void)
 {
-#ifdef PS5_BSP_TEXTURED
+#ifdef PS5_RESOURCE_FOUNDATION
+    ps5log_close("bsp-resource-soak-complete");
+#elif defined(PS5_BSP_TEXTURED)
     ps5log_close("bsp-textured-soak-complete");
 #elif defined(PS5_BSP_NOCLIP)
     ps5log_close("bsp-noclip-soak-complete");
@@ -810,6 +1134,9 @@ int main(void)
     resources.command_offset = resources.framebuffer_offset =
         resources.shader_offset = resources.depth_offset = -1;
     resources.bsp_offset = -1;
+#ifdef PS5_RESOURCE_FOUNDATION
+    resources.resource_heap_offset = -1;
+#endif
     resources.pad_handle = -1;
     resources.video.handle = -1;
     ps5log_config log_config;
@@ -832,7 +1159,14 @@ int main(void)
                         config_result, log_result,
                         log_path ? log_path : "unavailable");
 #ifdef PS5_BSP_VIEWER
-#ifdef PS5_BSP_TEXTURED
+#ifdef PS5_RESOURCE_FOUNDATION
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_RESOURCE_BOOT schema=1 target=gfx1013 fw=12.02 "
+        "constants=vsharp transient_slots=2 pipelines=2 overlay=quad "
+        "bundle_sha256=%s bundle_bytes=%u soak_frames=%u",
+        PS5_BSP_BUNDLE_SHA256, PS5_BSP_BUNDLE_BYTES,
+        BSP_GATE_FRAME_COUNT);
+#elif defined(PS5_BSP_TEXTURED)
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_TEXTURED_BOOT schema=1 target=gfx1013 fw=12.02 "
         "composition=base_x_lightmap bundle_sha256=%s bundle_bytes=%u "
@@ -926,6 +1260,7 @@ int main(void)
     if (result != 0)
         return fail_pre_submit("videoout_open_chain", result);
 
+#ifndef PS5_RESOURCE_FOUNDATION
     result = allocate_direct(&resources.shader, &resources.shader_offset,
                              SHADER_BYTES, SHADER_ALIGNMENT);
     if (result != 0)
@@ -936,10 +1271,31 @@ int main(void)
     if (result != 0)
         return fail_pre_submit("depth_map", result);
     resources.depth_allocated = resources.depth_mapped = 1;
+#endif
     memset(resources.shader, 0, SHADER_BYTES);
 
 #ifdef PS5_BSP_VIEWER
 #ifdef PS5_BSP_TEXTURED
+#ifdef PS5_RESOURCE_FOUNDATION
+    const struct ps5_shader_metadata metadata = {
+        PS5_BSP_RESOURCE_GS_RSRC1, PS5_BSP_RESOURCE_GS_RSRC2,
+        PS5_BSP_RESOURCE_PS_RSRC1, PS5_BSP_RESOURCE_PS_RSRC2,
+        PS5_BSP_RESOURCE_GE_CNTL, PS5_BSP_RESOURCE_SHADER_STAGES_EN,
+        PS5_BSP_RESOURCE_GS_OUT_PRIM_TYPE, PS5_BSP_RESOURCE_DRAW_MODIFIER,
+        ps5_bsp_resource_pre_raster_cx,
+        sizeof(ps5_bsp_resource_pre_raster_cx) /
+            sizeof(ps5_bsp_resource_pre_raster_cx[0]),
+        ps5_bsp_resource_pixel_cx,
+        sizeof(ps5_bsp_resource_pixel_cx) /
+            sizeof(ps5_bsp_resource_pixel_cx[0])
+    };
+    const uint8_t *const embedded_gs_start = ps5_bsp_resource_gs_start;
+    const uint8_t *const embedded_gs_end = ps5_bsp_resource_gs_end;
+    const uint8_t *const embedded_ps_start = ps5_bsp_resource_ps_start;
+    const uint8_t *const embedded_ps_end = ps5_bsp_resource_ps_end;
+    const size_t expected_gs_isa = PS5_BSP_RESOURCE_GS_ISA_BYTES;
+    const size_t expected_ps_isa = PS5_BSP_RESOURCE_PS_ISA_BYTES;
+#else
     const struct ps5_shader_metadata metadata = {
         PS5_BSP_TEXTURED_GS_RSRC1, PS5_BSP_TEXTURED_GS_RSRC2,
         PS5_BSP_TEXTURED_PS_RSRC1, PS5_BSP_TEXTURED_PS_RSRC2,
@@ -958,6 +1314,7 @@ int main(void)
     const uint8_t *const embedded_ps_end = ps5_bsp_textured_ps_end;
     const size_t expected_gs_isa = PS5_BSP_TEXTURED_GS_ISA_BYTES;
     const size_t expected_ps_isa = PS5_BSP_TEXTURED_PS_ISA_BYTES;
+#endif
 #else
     const struct ps5_shader_metadata metadata = {
         PS5_BSP_FLAT_GS_RSRC1, PS5_BSP_FLAT_GS_RSRC2,
@@ -1051,6 +1408,84 @@ int main(void)
                 resources.surface.width, resources.surface.height) != 0)
             return fail_pre_submit("pipeline_build", -1);
     }
+#ifdef PS5_RESOURCE_FOUNDATION
+    const struct ps5_shader_metadata overlay_metadata = {
+        PS5_BSP_OVERLAY_GS_RSRC1, PS5_BSP_OVERLAY_GS_RSRC2,
+        PS5_BSP_OVERLAY_PS_RSRC1, PS5_BSP_OVERLAY_PS_RSRC2,
+        PS5_BSP_OVERLAY_GE_CNTL, PS5_BSP_OVERLAY_SHADER_STAGES_EN,
+        PS5_BSP_OVERLAY_GS_OUT_PRIM_TYPE, PS5_BSP_OVERLAY_DRAW_MODIFIER,
+        ps5_bsp_overlay_pre_raster_cx,
+        sizeof(ps5_bsp_overlay_pre_raster_cx) /
+            sizeof(ps5_bsp_overlay_pre_raster_cx[0]),
+        ps5_bsp_overlay_pixel_cx,
+        sizeof(ps5_bsp_overlay_pixel_cx) /
+            sizeof(ps5_bsp_overlay_pixel_cx[0])
+    };
+    struct ps5_shader_arena *overlay_gs_arena =
+        (struct ps5_shader_arena *)(base + OVERLAY_GS_HEADER_OFFSET);
+    struct ps5_shader_arena *overlay_ps_arena =
+        (struct ps5_shader_arena *)(base + OVERLAY_PS_HEADER_OFFSET);
+    uint8_t *overlay_gs_code = base + OVERLAY_GS_CODE_OFFSET;
+    uint8_t *overlay_ps_code = base + OVERLAY_PS_CODE_OFFSET;
+    const size_t overlay_gs_isa =
+        (size_t)(ps5_bsp_overlay_gs_end - ps5_bsp_overlay_gs_start);
+    const size_t overlay_ps_isa =
+        (size_t)(ps5_bsp_overlay_ps_end - ps5_bsp_overlay_ps_start);
+    const uint32_t overlay_gs_size =
+        (uint32_t)overlay_gs_isa + SHADER_FOOTER_BYTES;
+    const uint32_t overlay_ps_size =
+        (uint32_t)overlay_ps_isa + SHADER_FOOTER_BYTES;
+    if (overlay_gs_isa != PS5_BSP_OVERLAY_GS_ISA_BYTES ||
+        overlay_ps_isa != PS5_BSP_OVERLAY_PS_ISA_BYTES ||
+        ps5_shader_header_build(overlay_gs_arena, PS5_SHADER_PRE_RASTER,
+                                overlay_gs_size, &overlay_metadata) != 0 ||
+        ps5_shader_header_build(overlay_ps_arena, PS5_SHADER_PIXEL,
+                                overlay_ps_size, &overlay_metadata) != 0)
+        return fail_pre_submit("overlay_shader_header", -1);
+    memcpy(overlay_gs_code, ps5_bsp_overlay_gs_start, overlay_gs_isa);
+    memcpy(overlay_ps_code, ps5_bsp_overlay_ps_start, overlay_ps_isa);
+    memcpy(overlay_gs_code + overlay_gs_size - SHADER_FOOTER_BYTES,
+           "barefoot", 8u);
+    memcpy(overlay_ps_code + overlay_ps_size - SHADER_FOOTER_BYTES,
+           "barefoot", 8u);
+    void *overlay_gs_object = 0;
+    void *overlay_ps_object = 0;
+    result = sceAgcCreateShader(&overlay_gs_object, overlay_gs_arena,
+                                overlay_gs_code);
+    if (result != 0 || overlay_gs_object != overlay_gs_arena)
+        return fail_pre_submit("create_overlay_gs",
+                               result != 0 ? result : -1);
+    result = sceAgcCreateShader(&overlay_ps_object, overlay_ps_arena,
+                                overlay_ps_code);
+    if (result != 0 || overlay_ps_object != overlay_ps_arena)
+        return fail_pre_submit("create_overlay_ps",
+                               result != 0 ? result : -1);
+    struct ps5_agc_linked_cx *overlay_linked_cx =
+        (struct ps5_agc_linked_cx *)(base + OVERLAY_LINKED_CX_OFFSET);
+    struct ps5_agc_linked_uc *overlay_linked_uc =
+        (struct ps5_agc_linked_uc *)(base + OVERLAY_LINKED_UC_OFFSET);
+    result = sceAgcLinkShaders(overlay_linked_cx, overlay_linked_uc, 0,
+                               overlay_gs_object, overlay_ps_object, 4u);
+    if (result != 0)
+        return fail_pre_submit("link_overlay_shaders", result);
+    struct ps5_pipeline_registers *overlay_pipelines =
+        (struct ps5_pipeline_registers *)(base + OVERLAY_PIPELINE_OFFSET);
+    for (unsigned slot = 0; slot < 2u; ++slot) {
+        ps5_agc_register color[PS5_COLOR_REGISTER_COUNT];
+        const uintptr_t address = (uintptr_t)resources.framebuffer +
+            resources.surface.buffer_offsets[slot];
+        if (ps5_color_build_target(color, defaults, address,
+                                   resources.surface.width,
+                                   resources.surface.height) != 0 ||
+            ps5_pipeline_build(
+                &overlay_pipelines[slot], color, overlay_linked_cx,
+                overlay_linked_uc, overlay_gs_arena->cx,
+                overlay_ps_arena->cx, overlay_gs_arena->sh,
+                overlay_ps_arena->sh, resources.surface.width,
+                resources.surface.height) != 0)
+            return fail_pre_submit("overlay_pipeline_build", -1);
+    }
+#endif
     ps5_agc_register *depth_registers =
         (ps5_agc_register *)(base + DEPTH_REGISTERS_OFFSET);
     if (ps5_depth_build_d32_no_htile(depth_registers,
@@ -1078,7 +1513,22 @@ int main(void)
         bsp_draw_dwords,
         (unsigned long long)renderer.command_slot_bytes,
         (unsigned long long)resources.bsp_bytes);
-#ifdef PS5_BSP_TEXTURED
+#ifdef PS5_RESOURCE_FOUNDATION
+    (void)ps5log_printf(PS5LOG_MARK,
+        "RESOURCE_HEAP_READY bytes=%llu allocations=4 "
+        "pool=fence-retired transient_slots=2 slot_bytes=%llu",
+        (unsigned long long)resources.resource_heap_bytes,
+        (unsigned long long)renderer.transient_ring.slots[0].bytes);
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_TEXTURE_TABLE_LAYOUT textures=%u descriptor_dwords=%u "
+        "storage=per-frame-transient lightmap=%ux%u "
+        "base_mode=repeat lightmap_mode=clamp filter=bilinear "
+        "composition=base_x_lightmap",
+        renderer.bsp_bundle.texture_count,
+        renderer.bsp_plan.descriptor_table_dwords,
+        renderer.bsp_bundle.lightmap_image->width,
+        renderer.bsp_bundle.lightmap_image->height);
+#elif defined(PS5_BSP_TEXTURED)
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_TEXTURE_TABLES_READY textures=%u descriptor_dwords=%u "
         "lightmap=%ux%u base_mode=repeat lightmap_mode=clamp "
@@ -1160,6 +1610,27 @@ int main(void)
 #endif
     renderer.pipelines[0] = &pipelines[0];
     renderer.pipelines[1] = &pipelines[1];
+#ifdef PS5_RESOURCE_FOUNDATION
+    renderer.overlay_pipelines[0] = &overlay_pipelines[0];
+    renderer.overlay_pipelines[1] = &overlay_pipelines[1];
+    renderer.overlay_draw_modifier = overlay_metadata.draw_modifier;
+    if (PS5_PIPELINE_PERMUTATION_COUNT != 2 ||
+        ps5_pipeline_permutations[PS5_PIPELINE_BSP_RESOURCE]
+                .gs_application_words != 2u ||
+        ps5_pipeline_permutations[PS5_PIPELINE_BSP_OVERLAY]
+                .gs_application_words != 1u)
+        return fail_pre_submit("pipeline_permutation_table", -1);
+    (void)ps5log_printf(PS5LOG_MARK,
+        "RESOURCE_PIPELINES_READY count=%u map=%s overlay=%s "
+        "map_gs_words=%u overlay_gs_words=%u",
+        PS5_PIPELINE_PERMUTATION_COUNT,
+        ps5_pipeline_permutations[PS5_PIPELINE_BSP_RESOURCE].name,
+        ps5_pipeline_permutations[PS5_PIPELINE_BSP_OVERLAY].name,
+        ps5_pipeline_permutations[PS5_PIPELINE_BSP_RESOURCE]
+            .gs_application_words,
+        ps5_pipeline_permutations[PS5_PIPELINE_BSP_OVERLAY]
+            .gs_application_words);
+#endif
     renderer.depth_registers = depth_registers;
     renderer.draw_modifier = metadata.draw_modifier;
     ps5_native_submit_context_init(&renderer.submit, resources.command,
@@ -1187,7 +1658,13 @@ int main(void)
     input.telemetry = frame_telemetry;
     input.user = &renderer;
 #ifdef PS5_BSP_VIEWER
-#ifdef PS5_BSP_TEXTURED
+#ifdef PS5_RESOURCE_FOUNDATION
+    (void)ps5log_line(PS5LOG_MARK,
+        "BSP_LOOP_BEGIN mode=resource-foundation-soak buffers=2 "
+        "color_dma=false depth_dma=true indexed=true frames=60000 "
+        "constants=per-frame descriptors=per-frame overlay=transient "
+        "retirement=fence+videoout");
+#elif defined(PS5_BSP_TEXTURED)
     (void)ps5log_line(PS5LOG_MARK,
         "BSP_LOOP_BEGIN mode=textured-noclip-soak buffers=2 "
         "color_dma=false depth_dma=true indexed=true frames=60000 "
@@ -1225,6 +1702,26 @@ int main(void)
         park("bsp-drain-or-ownership-failure");
     if (!guards_intact())
         park("guard-corruption");
+#ifdef PS5_RESOURCE_FOUNDATION
+    int resource_ring_reusable = renderer.last_completed_token != 0u;
+    for (uint32_t slot = 0u; slot < 2u; ++slot) {
+        if (ps5_transient_ring_begin(
+                &renderer.transient_ring, slot,
+                renderer.completed_tokens[slot],
+                renderer.completed_tokens[slot] != 0u) !=
+                PS5_TRANSIENT_OK ||
+            ps5_transient_ring_abort_unsubmitted(
+                &renderer.transient_ring, slot) != PS5_TRANSIENT_OK)
+            resource_ring_reusable = 0;
+    }
+    (void)ps5log_printf(resource_ring_reusable ? PS5LOG_MARK : PS5LOG_ERR,
+        "RESOURCE_RING_RETIRED slots=2 reusable=%s tokens=exact "
+        "last_token=%llu",
+        resource_ring_reusable ? "true" : "false",
+        (unsigned long long)renderer.last_completed_token);
+    if (!resource_ring_reusable)
+        park("resource-ring-retirement-gate-failure");
+#endif
     const size_t readback_bytes = resources.surface.tiled_footprint;
     uint8_t *const first = resources.framebuffer;
     uint8_t *const second = (uint8_t *)resources.framebuffer +
@@ -1236,7 +1733,18 @@ int main(void)
     const uint64_t first_bright = bright_pixel_count(first, readback_bytes);
     const uint64_t second_bright = bright_pixel_count(second, readback_bytes);
 #ifdef PS5_BSP_NOCLIP
-#ifdef PS5_BSP_TEXTURED
+#ifdef PS5_RESOURCE_FOUNDATION
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_RESOURCE_READBACK buffer0=%016llx buffer1=%016llx bytes=%llu "
+        "bright_pixels0=%llu bright_pixels1=%llu guards=intact "
+        "frames=%llu errors=%llu overlay=transient",
+        (unsigned long long)first_hash, (unsigned long long)second_hash,
+        (unsigned long long)readback_bytes,
+        (unsigned long long)first_bright,
+        (unsigned long long)second_bright,
+        (unsigned long long)run.frames_completed,
+        (unsigned long long)run.telemetry.errors);
+#elif defined(PS5_BSP_TEXTURED)
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_TEXTURED_READBACK buffer0=%016llx buffer1=%016llx bytes=%llu "
         "bright_pixels0=%llu bright_pixels1=%llu guards=intact "
@@ -1265,7 +1773,18 @@ int main(void)
         renderer.pad_read_errors == 0u &&
         renderer.noclip.sampled_frames == BSP_GATE_FRAME_COUNT &&
         renderer.noclip.connected_frames == BSP_GATE_FRAME_COUNT;
-#ifdef PS5_BSP_TEXTURED
+#ifdef PS5_RESOURCE_FOUNDATION
+    const int resource_valid =
+        input_continuity_valid &&
+        first_bright != 0u && second_bright != 0u &&
+        renderer.bsp_plan.descriptor_table_dwords ==
+            renderer.bsp_bundle.texture_count * BSP_TEXTURE_TABLE_DWORDS &&
+        renderer.resource_frames[0].transient_bytes != 0u &&
+        renderer.resource_frames[1].transient_bytes != 0u &&
+        renderer.last_completed_token != 0u;
+    if (!resource_valid)
+        park("resource-render-or-retirement-gate-failure");
+#elif defined(PS5_BSP_TEXTURED)
     const int textured_valid =
         input_continuity_valid &&
         first_bright != 0u && second_bright != 0u &&
@@ -1282,7 +1801,41 @@ int main(void)
     if (!noclip_valid)
         park("noclip-input-or-movement-gate-failure");
 #endif
-#ifdef PS5_BSP_TEXTURED
+#ifdef PS5_RESOURCE_FOUNDATION
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_RESOURCE_SOAK_COMPLETE frames=%llu connected_frames=%llu "
+        "read_errors=%llu textures=%u descriptor_dwords=%u "
+        "constants=per-frame overlay=transient pipelines=2 "
+        "tokens=exact guards=intact errors=%llu",
+        (unsigned long long)run.frames_completed,
+        (unsigned long long)renderer.noclip.connected_frames,
+        (unsigned long long)renderer.pad_read_errors,
+        renderer.bsp_bundle.texture_count,
+        renderer.bsp_plan.descriptor_table_dwords,
+        (unsigned long long)run.telemetry.errors);
+    const uint64_t retire_token = renderer.last_completed_token;
+    uint32_t reclaimed = 0u;
+    if (ps5_resource_pool_release_deferred(
+            &resources.resource_pool, &resources.bsp_allocation,
+            retire_token) != PS5_RESOURCE_POOL_OK ||
+        ps5_resource_pool_release_deferred(
+            &resources.resource_pool, &resources.shader_allocation,
+            retire_token) != PS5_RESOURCE_POOL_OK ||
+        ps5_resource_pool_release_deferred(
+            &resources.resource_pool, &resources.depth_allocation,
+            retire_token) != PS5_RESOURCE_POOL_OK ||
+        ps5_resource_pool_release_deferred(
+            &resources.resource_pool, &resources.transient_allocation,
+            retire_token) != PS5_RESOURCE_POOL_OK ||
+        ps5_resource_pool_reclaim(
+            &resources.resource_pool, retire_token, 1,
+            &reclaimed) != PS5_RESOURCE_POOL_OK || reclaimed != 4u)
+        park("resource-pool-retirement-gate-failure");
+    (void)ps5log_printf(PS5LOG_MARK,
+        "RESOURCE_POOL_RETIRED token=%llu reclaimed=%u "
+        "completion=fence+videoout",
+        (unsigned long long)retire_token, reclaimed);
+#elif defined(PS5_BSP_TEXTURED)
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_TEXTURED_SOAK_COMPLETE frames=%llu connected_frames=%llu "
         "moving_frames=%llu looking_frames=%llu distance_milli=%llu "
