@@ -33,7 +33,23 @@ def main() -> int:
             raise AssertionError("invalid PAL contract must fail")
     source = (ROOT / "tools/generate_agc_metadata.py").read_text()
     assert '("gfx1013", "Ngg", True)' in source
-    assert "PS5_GEARS_DRAW_MODIFIER" in source
+    sample = {
+        "gs_isa_bytes": 1, "ps_isa_bytes": 2, "gs_rsrc1": 3,
+        "gs_rsrc2": 4, "ps_rsrc1": 5, "ps_rsrc2": 6, "ge_cntl": 7,
+        "shader_stages_en": 8, "draw_modifier": 5,
+        "pre_raster_cx": [(1, 2)], "pixel_cx": [(3, 4)],
+    }
+    header = MODULE.render_header(sample, "BSP_FLAT", "ps5_bsp_flat")
+    assert "PS5_BSP_FLAT_DRAW_MODIFIER" in header
+    assert "ps5_bsp_flat_pre_raster_cx" in header
+    default_header = MODULE.render_header(sample)
+    assert "PS5_GEARS_DRAW_MODIFIER" in default_header
+    try:
+        MODULE.render_header(sample, "../BAD", "ps5_bsp_flat")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unsafe metadata prefix must fail")
     print("AGC metadata translator unit tests passed")
     return 0
 

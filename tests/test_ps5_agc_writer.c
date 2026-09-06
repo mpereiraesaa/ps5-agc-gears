@@ -34,6 +34,14 @@ static uint32_t *emit_draw(void *writer, uint32_t vertices, uint64_t modifier)
     return ((struct ps5_agc_command_buffer *)writer)->up;
 }
 
+static uint32_t *emit_indexed(void *writer, uint32_t count,
+                              const void *indices, uint64_t modifier)
+{
+    assert(count == 6u && indices && modifier == UINT64_C(0x1234));
+    advance(writer, 6u);
+    return ((struct ps5_agc_command_buffer *)writer)->up;
+}
+
 static uint32_t *emit_direct(void *writer, uint32_t offset,
                              const uint32_t *values, uint32_t count)
 {
@@ -58,6 +66,17 @@ static uint32_t *emit_fill(void *writer, void *destination, uint32_t word,
     return ((struct ps5_agc_command_buffer *)writer)->up;
 }
 
+static uint32_t *emit_acquire(void *writer, uint8_t engine,
+                              uint32_t cb_db_op, uint32_t gcr_control,
+                              const volatile void *base, uint64_t bytes,
+                              uint32_t poll_cycles)
+{
+    assert(engine == 1u && cb_db_op == 0u && gcr_control == 0x9000u);
+    assert(base && bytes == 256u && poll_cycles == 0x190u);
+    advance(writer, 8u);
+    return ((struct ps5_agc_command_buffer *)writer)->up;
+}
+
 static uint32_t get_wait_size(void) { return wait_size; }
 
 static uint32_t emit_wait(uint32_t **cursor, uint32_t words,
@@ -74,7 +93,7 @@ int main(void)
 {
     union {
         uint64_t align;
-        uint32_t words[128];
+        _Alignas(256) uint32_t words[128];
     } gpu = {0};
     uint32_t *cursor = gpu.words;
 
@@ -85,33 +104,50 @@ int main(void)
     assert(ps5_agc_writer_draw_auto(&cursor, 64u, 36u, UINT64_C(0x1234),
                                     emit_draw) == PS5_AGC_WRITER_OK);
     assert(cursor == gpu.words + 9);
+    assert(ps5_agc_writer_draw_index(
+               &cursor, 64u, 6u, (const uint16_t *)gpu.words + 250u, gpu.words,
+               sizeof(gpu.words), UINT64_C(0x1234), emit_indexed) ==
+           PS5_AGC_WRITER_OK);
+    assert(cursor == gpu.words + 15);
 
     uint32_t values[24] = {11u};
     assert(ps5_agc_writer_set_sh_direct(&cursor, 64u, 0x8cu, values, 24u,
                                         emit_direct) == PS5_AGC_WRITER_OK);
-    assert(cursor == gpu.words + 35);
+    assert(cursor == gpu.words + 41);
 
     assert(ps5_agc_writer_set_indirect(&cursor, 64u, gpu.words + 96, 2u,
                                        gpu.words, sizeof(gpu.words),
                                        emit_indirect) == PS5_AGC_WRITER_OK);
-    assert(cursor == gpu.words + 39);
+    assert(cursor == gpu.words + 45);
     assert(ps5_agc_writer_set_indirect(&cursor, 64u, values, 2u,
                                        gpu.words, sizeof(gpu.words),
                                        emit_indirect) ==
            PS5_AGC_WRITER_NOT_GPU_VISIBLE);
-    assert(cursor == gpu.words + 39);
+    assert(cursor == gpu.words + 45);
+    assert(ps5_agc_writer_draw_index(
+               &cursor, 64u, 6u, (const uint16_t *)values, gpu.words,
+               sizeof(gpu.words),
+               UINT64_C(0x1234), emit_indexed) ==
+           PS5_AGC_WRITER_NOT_GPU_VISIBLE);
+    assert(cursor == gpu.words + 45);
 
     assert(ps5_agc_writer_fill_depth(&cursor, 64u, gpu.words + 64,
                                      0x3f800000u, 64u, gpu.words,
                                      sizeof(gpu.words), emit_fill) ==
            PS5_AGC_WRITER_OK);
-    assert(cursor == gpu.words + 47);
+    assert(cursor == gpu.words + 53);
+
+    assert(ps5_agc_writer_acquire_mem(
+               &cursor, 64u, gpu.words + 64u, 256u, 1u, 0x9000u, 0x190u,
+               gpu.words, sizeof(gpu.words), emit_acquire) ==
+           PS5_AGC_WRITER_OK);
+    assert(cursor == gpu.words + 61);
 
     wait_size = 5u;
     assert(ps5_agc_writer_wait_rendering(&cursor, 16u, 0u, 7, 1,
                                          get_wait_size, emit_wait) ==
            PS5_AGC_WRITER_OK);
-    assert(cursor == gpu.words + 52);
+    assert(cursor == gpu.words + 66);
 
     uint32_t *const stable = cursor;
     behavior = 1u;

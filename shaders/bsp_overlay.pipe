@@ -1,0 +1,57 @@
+[Version]
+version = 65
+
+[VsGlsl]
+#version 450
+layout(set = 0, binding = 0, std140) uniform OverlayConstants {
+    vec4 color;
+    vec4 debug_values[7];
+} overlay;
+layout(location = 0) out vec4 color;
+void main() {
+    vec2 position;
+    int corner = gl_VertexIndex & 3;
+    if (corner == 0)
+        position = vec2(-0.96, 0.86);
+    else if (corner == 1)
+        position = vec2(-0.62, 0.86);
+    else if (corner == 2)
+        position = vec2(-0.62, 0.94);
+    else
+        position = vec2(-0.96, 0.94);
+    gl_Position = vec4(position, 0.0, 1.0);
+    color = overlay.color + overlay.debug_values[0] * 0.0000001;
+}
+
+[VsInfo]
+entryPoint = main
+
+[FsGlsl]
+#version 450
+layout(location = 0) in vec4 color;
+layout(location = 0) out vec4 out_color;
+void main() {
+    out_color = color;
+}
+
+[FsInfo]
+entryPoint = main
+
+[ResourceMapping]
+userDataNode[0].visibility = 2
+userDataNode[0].type = DescriptorTableVaPtr
+userDataNode[0].offsetInDwords = 0
+userDataNode[0].sizeInDwords = 1
+userDataNode[0].next[0].type = DescriptorConstBuffer
+userDataNode[0].next[0].offsetInDwords = 0
+userDataNode[0].next[0].sizeInDwords = 4
+userDataNode[0].next[0].set = 0
+userDataNode[0].next[0].binding = 0
+
+[GraphicsPipelineState]
+topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+nggState.enableNgg = 1
+nggState.enableGsUse = 0
+colorBuffer[0].format = VK_FORMAT_B8G8R8A8_UNORM
+colorBuffer[0].channelWriteMask = 15
+colorBuffer[0].blendEnable = 0

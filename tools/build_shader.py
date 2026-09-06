@@ -20,6 +20,7 @@ except ImportError as error:
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = "gfx1013"
 GFXIP = "10.1.3"
+PUBLIC_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 class PalMetadataLoader(yaml.SafeLoader):
@@ -52,6 +53,12 @@ def checked_tool(path: Path, name: str) -> Path:
     if not path.is_file() or not os.access(path, os.X_OK):
         raise SystemExit(f"missing executable {name}: {path}")
     return path.resolve()
+
+
+def checked_name(value: str) -> str:
+    if not PUBLIC_NAME.fullmatch(value):
+        raise SystemExit(f"invalid shader output name: {value}")
+    return value
 
 
 def decode_pal_metadata(notes: str) -> dict[str, object]:
@@ -88,6 +95,7 @@ def decode_pal_metadata(notes: str) -> dict[str, object]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pipe", type=Path, default=ROOT / "shaders/gears_lit.pipe")
+    parser.add_argument("--name", help="stable output stem; defaults to pipe stem")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "build/shaders")
     parser.add_argument("--amdllpc", type=Path, required=True)
     parser.add_argument("--readelf", type=Path, required=True)
@@ -102,11 +110,12 @@ def main() -> int:
     objcopy = checked_tool(args.objcopy, "llvm-objcopy")
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    elf = output_dir / "gears_lit.pal.elf"
-    text_path = output_dir / "gears_lit.text.bin"
-    vertex_path = output_dir / "gears_lit.gs.bin"
-    pixel_path = output_dir / "gears_lit.ps.bin"
-    manifest_path = output_dir / "gears_lit.manifest.json"
+    name = checked_name(args.name or pipe.stem)
+    elf = output_dir / f"{name}.pal.elf"
+    text_path = output_dir / f"{name}.text.bin"
+    vertex_path = output_dir / f"{name}.gs.bin"
+    pixel_path = output_dir / f"{name}.ps.bin"
+    manifest_path = output_dir / f"{name}.manifest.json"
 
     run([str(amdllpc), f"-gfxip={GFXIP}", f"-o={elf}", str(pipe)])
     run([str(objcopy), f"--dump-section=.text={text_path}", str(elf)])
@@ -146,6 +155,7 @@ def main() -> int:
     pal = decode_pal_metadata(notes)
     manifest = {
         "schema": 1,
+        "name": name,
         "target": TARGET,
         "gfxip": GFXIP,
         "source": pipe.relative_to(ROOT).as_posix(),

@@ -33,6 +33,13 @@ covered by synthetic host tests.
 | `ps5_videoout` | Owns VideoOut open, equeue/event setup, flip rate, buffer registration and ordered teardown. | Host fault injection covers every acquisition boundary and the FW 12.02 `RESOURCE_BUSY` unregister behavior; standalone hardware runs completed through VideoOut close and memory release. |
 | `native/main.c` | Joins the extracted units into the complete two-buffer renderer and native lifecycle. | The exact standalone build completed 300-frame strict validation and a 10,000-frame hardware soak on FW 12.02. |
 | `tools/build_native.sh` | Fetches/verifies the pinned public foundation, builds `gfx1013` shaders and metadata, compiles, links, signs and packages `PPSA99997`. | Its output is ignored, inspected after signing and identified by SHA-256 in every accepted hardware run. |
+| `bsp_texture_descriptor` | Emits linear RGBA8 image and sampler SRDs plus one base/lightmap table per BSP texture. | Exact GFX10.3 words, 48-bit address/alignment limits, padded pitch, repeat/clamp modes, full-table sizing and forged-view failures are host-tested against the public Mesa register contract. |
+| `ps5_resource_pool` | Suballocates one direct-memory heap with aligned first-fit placement and generation-tagged handles. | Host tests cover fragmentation, stale handles, unsubmitted release and refusal to reclaim submitted resources without exact completion proof. |
+| `ps5_transient_ring` and `ps5_transient_table` | Own two per-frame arenas and build GPU-visible descriptor tables inside the currently open slot. | Host tests cover alignment, exhaustion, abort-before-submit, sealed-token mismatch and exact-token reuse. |
+| `ps5_gfx1013_descriptor` | Builds named V#, T# and S# records for structured vertices, raw constants and BSP images/samplers. | Exact DWORD tests pin the independently authored subset derived from Mesa's public GFX10.3 definitions. |
+| `ps5_cache_contract` | Plans an aligned CPU flush and scoped AcquireMem before GPU reads, then requires fence plus exact VideoOut token before CPU reuse. | Host tests pin the 256-byte range, FW-observed raw engine/GCR/poll tuple, operation order and refusal of fence-only completion; raw PS5 bits are not assigned speculative public AMD names. |
+| `bsp_resource_frame` and `bsp_resource_draw` | Build per-frame constants, descriptors and overlay geometry, then compose the map and overlay pipeline permutations. | Synthetic GPU mappings verify all spans, exact draw counts, packet lengths, distinct GS `0x8d`/PS `0x0d` user-data banks and no-write-on-invalid-input behavior; an isolated overlay hardware run completed 2,340 frames after the bank correction. |
+| `shaders/bsp_resource.pipe`, `shaders/bsp_overlay.pipe` and generated permutation metadata | Define the constant-buffer textured map and transient visible overlay pipelines. | Source contracts pin resource mappings, constant layouts and shader-generated overlay vertices; LLPC manifests and generated application-word counts are validated together. |
 
 These units replace laboratory-prefixed prototypes with project-owned names
 and interfaces. Their behavior was exercised by the private native integration
@@ -41,14 +48,22 @@ depend on the parent laboratory.
 
 ## Hardware evidence versus repository evidence
 
-The 300-frame and 10,000-frame FW 12.02 runs cited in the README used title
-`PPSA99997` built entirely by `tools/build_native.sh` from this repository and
-the pinned public foundation. The strict 300-frame run proves the complete
-opening telemetry identity, exact frame ownership and clean teardown contract.
-The 10,000-frame run proves prolonged GPU/ownership behavior but predates the
-final `LOG_BOOT_MONOTONIC_NS` opening-record correction; this limitation is
-preserved rather than silently reclassifying that transcript. Exact run IDs and
-artifact hashes are listed in `HARDWARE_VALIDATION.md`.
+The 300-frame, 10,000-frame and Phase 2 60,000-frame FW 12.02 runs cited in the
+README used title `PPSA99997` built entirely by this repository's native build
+path and the pinned public foundation. The strict 300-frame run proves the
+complete opening telemetry identity, exact frame ownership and clean teardown
+contract. The earlier 10,000-frame run proves prolonged GPU/ownership behavior
+but predates the final `LOG_BOOT_MONOTONIC_NS` opening-record correction; this
+limitation is preserved rather than silently reclassifying that transcript.
+
+The Phase 2 run
+`20260906T130036578Z_PPSA99997_ps5-agc-gears_0x5ed84765862b` proves the
+resource-pool, per-frame transient, descriptor-table, constant-buffer,
+pipeline-permutation and cache-transition path for 60,000 frames. Its public
+claim is limited to sanitized identities, hashes and outcomes. The private
+`c1a0` BSP, compiled artifact, transcript and Remote Play captures remain
+outside this repository. Exact hashes and validator results are listed in
+`HARDWARE_VALIDATION.md`.
 
 ## Rules for later extraction
 
