@@ -37,8 +37,8 @@ void main() {
         color = vec4(control.rgb, 1.0);
         return;
     }
-    vec4 base = texture(base_texture, base_uv);
-    color = vec4(base.rgb * texture(lightmap_texture, light_uv).rgb, 1.0);
+    vec4 sky = texture(base_texture, base_uv);
+    color = vec4(sky.rgb, 1.0);
 }
 
 [FsInfo]

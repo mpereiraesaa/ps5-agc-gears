@@ -83,5 +83,20 @@
 - [x] Add host contracts and a fail-closed structured-evidence validator for
   the resource-foundation path.
 - [x] Pass and archive the Phase 2 60,000-frame hardware gate on FW 12.02.
+- [x] Pass the Phase 3 bounded dynamic-lightmap 10,000-frame gate with
+  alternating GPU-visible readbacks, stable surrounding bytes, intact guards,
+  exact slot retirement and six reclaimed allocations.
+- [x] Add deterministic mip chains and mip-aware trilinear/anisotropic
+  descriptors; pass their host contracts and paired-lightmap 10,000-frame FW
+  12.02 hardware gate with distinct sampler readbacks.
+- [x] Add the `{` alpha-test permutation as a separate opaque/alpha draw pass;
+  pass its compiled kill-bit contract and paired-state 10,000-frame FW 12.02
+  hardware gate with distinct control/alpha readbacks.
+- [x] Add sky as a separate unlit pass and pass its paired-state 10,000-frame
+  hardware gate with 158 draws and distinct skip/pass readbacks.
+- [x] Add checked resident/upload accounting with a gap-free per-frame digest
+  and pass its 10,000-frame hardware gate.
+- [x] Pass and archive the complete Phase 3 60,000-frame hardware gate with
+  exact accounting, GPU-visible readbacks, intact guards and zero errors.
 - [x] Require pull requests on `main`; require the host CI check after this PR
   establishes its final check context.

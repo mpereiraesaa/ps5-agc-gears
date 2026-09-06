@@ -21,12 +21,16 @@ enum bsp_texture_address_mode {
 enum bsp_texture_filter {
     BSP_TEXTURE_FILTER_POINT = PS5_GFX1013_FILTER_POINT,
     BSP_TEXTURE_FILTER_BILINEAR = PS5_GFX1013_FILTER_BILINEAR,
+    BSP_TEXTURE_FILTER_TRILINEAR = PS5_GFX1013_FILTER_TRILINEAR,
+    BSP_TEXTURE_FILTER_ANISOTROPIC_4X =
+        PS5_GFX1013_FILTER_ANISOTROPIC_4X,
 };
 
 /* Build one GFX10.3 image+sampler descriptor for linear RGBA8_UNORM. */
 int bsp_gfx1013_combined_descriptor(
     uint32_t out[BSP_GFX1013_COMBINED_DWORDS], uint64_t gpu_address,
     uint32_t width, uint32_t height, uint32_t row_pitch,
+    uint32_t mip_count,
     enum bsp_texture_address_mode address_mode,
     enum bsp_texture_filter filter);
 
@@ -37,6 +41,7 @@ int bsp_texture_build_tables(uint32_t *out, uint32_t capacity_dwords,
                              const BspBundleView *bundle,
                              uint64_t texture_pixels_gpu_address,
                              uint64_t lightmap_pixels_gpu_address,
+                             enum bsp_texture_filter base_filter,
                              uint32_t *written_dwords);
 
 #endif

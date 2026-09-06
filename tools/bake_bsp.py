@@ -31,14 +31,14 @@ LUMP_EDGES = 12
 LUMP_SURFEDGES = 13
 
 BUNDLE_MAGIC = b"PS5BSP\0\0"
-BUNDLE_VERSION = 2
+BUNDLE_VERSION = 3
 BUNDLE_HEADER = struct.Struct("<8sIIII3f3f4I")
 CHUNK_HEADER = struct.Struct("<4sIIIIIII")
 VERTEX = struct.Struct("<3f2f2fI")
 DRAW = struct.Struct("<8I")
 INDEX = struct.Struct("<H")
 IMAGE = struct.Struct("<4I")
-TEXTURE = struct.Struct("<8I")
+TEXTURE = struct.Struct("<12I")
 
 MAX_INPUT_BYTES = 512 * 1024 * 1024
 MAX_OUTPUT_BYTES = 64 * 1024 * 1024
@@ -53,6 +53,7 @@ IMAGE_FORMAT_RGBA8_UNORM = 1
 TEXTURE_FLAG_TRANSPARENT = 1
 TEXTURE_FLAG_FALLBACK = 2
 TEXTURE_FLAG_NODRAW = 4
+TEXTURE_FLAG_SKY = 8
 NODRAW_TEXTURE_NAMES = frozenset((
     b"aaatrigger", b"clip", b"hint", b"null", b"origin", b"skip",
 ))
@@ -157,6 +158,69 @@ def _fallback_texture(width: int, height: int) -> bytes:
     return bytes(pixels)
 
 
+def _mip_dimensions(width: int, height: int) -> list[tuple[int, int]]:
+    dimensions = []
+    while True:
+        dimensions.append((width, height))
+        if width == 1 and height == 1:
+            return dimensions
+        width = max(1, width >> 1)
+        height = max(1, height >> 1)
+
+
+def _downsample_rgba(source: bytes, width: int, height: int) -> bytes:
+    target_width = max(1, width >> 1)
+    target_height = max(1, height >> 1)
+    target = bytearray(target_width * target_height * 4)
+    for y in range(target_height):
+        source_y = min(y * 2, height - 1)
+        rows = (source_y,) if source_y + 1 >= height else (source_y, source_y + 1)
+        for x in range(target_width):
+            source_x = min(x * 2, width - 1)
+            columns = (source_x,) if source_x + 1 >= width else (source_x, source_x + 1)
+            samples = len(rows) * len(columns)
+            sums = [0, 0, 0, 0]
+            for sample_y in rows:
+                for sample_x in columns:
+                    at = (sample_y * width + sample_x) * 4
+                    for channel in range(4):
+                        sums[channel] += source[at + channel]
+            target_at = (y * target_width + x) * 4
+            for channel in range(4):
+                # Integer round-to-nearest is host-FP independent.
+                target[target_at + channel] = (sums[channel] + samples // 2) // samples
+    return bytes(target)
+
+
+def _rgba_mip_chain(base: bytes, width: int, height: int) -> list[bytes]:
+    dimensions = _mip_dimensions(width, height)
+    levels = [base]
+    for level_width, level_height in dimensions[:-1]:
+        levels.append(_downsample_rgba(levels[-1], level_width, level_height))
+    return levels
+
+
+def _linear_mip_chain(base: bytes, width: int, height: int
+                      ) -> tuple[bytes, int, int]:
+    """Pack the public AddrLib GFX10 ADDR_SW_LINEAR mip layout.
+
+    AddrLib walks levels from smallest to largest, with every level using a
+    256-byte-aligned pitch. The T# base address points at the whole chain.
+    """
+    dimensions = _mip_dimensions(width, height)
+    levels = _rgba_mip_chain(base, width, height)
+    output = bytearray()
+    for level in range(len(levels) - 1, -1, -1):
+        level_width, level_height = dimensions[level]
+        row_pitch = _align(level_width * 4, 256)
+        rgba = levels[level]
+        for row in range(level_height):
+            source = row * level_width * 4
+            output += rgba[source:source + level_width * 4]
+            output += bytes(row_pitch - level_width * 4)
+    return bytes(output), _align(width * 4, 256), len(levels)
+
+
 def _parse_base_textures(data: bytes, lump: Lump) -> list[BaseTexture]:
     if lump.size < 4:
         raise BakeError("texture lump is truncated")
@@ -197,6 +261,8 @@ def _parse_base_textures(data: bytes, lump: Lump) -> list[BaseTexture]:
         flags = TEXTURE_FLAG_TRANSPARENT if name.startswith(b"{") else 0
         if name.lower() in NODRAW_TEXTURE_NAMES:
             flags |= TEXTURE_FLAG_NODRAW
+        if name.lower() == b"sky":
+            flags |= TEXTURE_FLAG_SKY
         if offsets[0] == 0:
             if any(offsets):
                 raise BakeError(f"miptex {index} has an incomplete mip chain")
@@ -252,16 +318,15 @@ def _texture_chunks(textures: list[BaseTexture]) -> tuple[bytes, bytes]:
         aligned = _align(len(pixels), 256)
         pixels += bytes(aligned - len(pixels))
         offset = len(pixels)
-        row_pitch = _align(texture.width * 4, 256)
-        for row in range(texture.height):
-            source = row * texture.width * 4
-            pixels += texture.rgba[source:source + texture.width * 4]
-            pixels += bytes(row_pitch - texture.width * 4)
-        texture_bytes = row_pitch * texture.height
+        chain, row_pitch, mip_count = _linear_mip_chain(
+            texture.rgba, texture.width, texture.height)
+        pixels += chain
+        texture_bytes = len(chain)
         metadata += TEXTURE.pack(offset, texture_bytes, texture.width,
                                  texture.height, row_pitch,
                                  IMAGE_FORMAT_RGBA8_UNORM,
-                                 texture.name_hash, texture.flags)
+                                 texture.name_hash, texture.flags,
+                                 mip_count, 0, 0, 0)
     return bytes(metadata), bytes(pixels)
 
 

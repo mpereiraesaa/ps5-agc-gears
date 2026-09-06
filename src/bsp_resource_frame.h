@@ -3,6 +3,7 @@
 
 #include "bsp_bundle.h"
 #include "bsp_flat_draw.h"
+#include "ps5_gfx1013_descriptor.h"
 #include "ps5_transient_ring.h"
 
 #include <stddef.h>
@@ -41,9 +42,11 @@ typedef struct BspResourceFrame {
 int bsp_resource_frame_build(
     BspResourceFrame *out, Ps5TransientRing *ring, uint32_t slot_index,
     const void *gpu_mapping, size_t gpu_mapping_bytes,
-    const BspBundleView *bundle, const BspBundleVertex clear_vertices[3],
+    const BspBundleView *bundle, uint64_t lightmap_pixels_gpu_address,
+    const BspBundleVertex clear_vertices[3],
     const uint16_t clear_indices[3],
     const float camera_position[3], const float camera_forward[3],
-    float aspect_ratio, uint64_t frame_index);
+    float aspect_ratio, uint64_t frame_index,
+    enum ps5_gfx1013_filter base_filter);
 
 #endif

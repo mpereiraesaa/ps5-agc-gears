@@ -90,7 +90,11 @@ static int overlay_constants(
     BspOverlayConstants *data = data_slice.cpu;
     memset(data, 0, sizeof(*data));
     data->color[0] = 0.04f;
+#ifdef PS5_TEXTURE_PATH
+    data->color[1] = 0.35f;
+#else
     data->color[1] = 0.35f + (float)(frame_index & 63u) / 128.0f;
+#endif
     data->color[2] = 0.10f;
     data->color[3] = 1.0f;
     data->debug_values[0] = (float)(frame_index & UINT64_C(0xffff));
@@ -104,10 +108,12 @@ static int overlay_constants(
 int bsp_resource_frame_build(
     BspResourceFrame *out, Ps5TransientRing *ring, uint32_t slot_index,
     const void *gpu_mapping, size_t gpu_mapping_bytes,
-    const BspBundleView *bundle, const BspBundleVertex clear_vertices[3],
+    const BspBundleView *bundle, uint64_t lightmap_pixels_gpu_address,
+    const BspBundleVertex clear_vertices[3],
     const uint16_t clear_indices[3],
     const float camera_position[3], const float camera_forward[3],
-    float aspect_ratio, uint64_t frame_index)
+    float aspect_ratio, uint64_t frame_index,
+    enum ps5_gfx1013_filter base_filter)
 {
     if (!out || !ring || slot_index >= ring->slot_count || !bundle ||
         !bundle->vertices || !bundle->textures || !clear_vertices ||
@@ -147,14 +153,23 @@ int bsp_resource_frame_build(
     uint32_t texture_dwords = 0u;
     Ps5TransientTable texture_table;
     uint32_t written = 0u;
-    if (bsp_texture_table_required_dwords(bundle, &texture_dwords) != 0 ||
+    if (!bundle->lightmap_image || bundle->lightmap_image->row_pitch == 0u ||
+        bundle->lightmap_image->height >
+            SIZE_MAX / bundle->lightmap_image->row_pitch ||
+        !ps5_gpu_span_visible(
+            gpu_mapping, gpu_mapping_bytes,
+            (const void *)(uintptr_t)lightmap_pixels_gpu_address,
+            (size_t)bundle->lightmap_image->height *
+                bundle->lightmap_image->row_pitch) ||
+        bsp_texture_table_required_dwords(bundle, &texture_dwords) != 0 ||
         ps5_transient_table_allocate(ring, slot_index, texture_dwords,
                                      gpu_mapping, gpu_mapping_bytes,
                                      &texture_table) != 0 ||
         bsp_texture_build_tables(
             texture_table.words, texture_dwords, bundle,
             (uintptr_t)bundle->texture_pixels,
-            (uintptr_t)bundle->lightmap_pixels, &written) != 0 ||
+            lightmap_pixels_gpu_address,
+            (enum bsp_texture_filter)base_filter, &written) != 0 ||
         written != texture_dwords)
         return -5;
     out->texture_tables = texture_table.words;

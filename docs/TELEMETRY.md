@@ -40,6 +40,59 @@ No submit return value, silence, elapsed timeout or clean TCP close substitutes
 for these ownership observations. If telemetry becomes incomplete after submit,
 the process parks and retains resources.
 
+The Phase 3 dynamic-lightmap gate additionally emits
+`DYNAMIC_LIGHTMAP_READY`, four `DYNAMIC_LIGHTMAP_FRAME` samples,
+`DYNAMIC_LIGHTMAP_READBACK` and `BSP_TEXTURE_PATH_LIGHTMAP_COMPLETE`. The
+samples separate resident bytes, transient bytes, actual lightmap upload bytes,
+the wider aligned acquire span and the cumulative upload total. Acceptance
+requires deterministic A/B patch hashes, distinct final GPU buffer hashes,
+stable bytes outside the patch, intact guards and six-allocation exact-token
+reclamation.
+
+The mip/sampler gate adds `MIP_CHAINS_READY`, four `MIP_SAMPLER_FRAME`
+samples, `MIP_SAMPLER_READBACK` and `BSP_TEXTURE_PATH_MIP_COMPLETE`. The chain
+record fixes layout order, pitch alignment, level range and aggregate bytes.
+The frame samples expose the exact four S# DWORDs. Final trilinear and
+anisotropic frames must use the same lightmap pattern and produce different
+GPU-visible framebuffer hashes; both dynamic-lightmap slot hashes must remain
+equal. The accepted run must also retain every Gate 1 ownership, guard, upload
+and exact-token invariant.
+
+The alpha-test gate adds `ALPHA_TEST_READY`, three `ALPHA_TEST_FRAME` samples,
+`ALPHA_TEST_READBACK` and `BSP_TEXTURE_PATH_ALPHA_COMPLETE`. The ready record
+fixes the `{` texture/draw partition, the selected camera target and the raw
+opaque/alpha `DB_SHADER_CONTROL` values. Final control and alpha-test frames
+must share the same camera, anisotropic sampler and dynamic-lightmap pattern,
+while producing distinct GPU-visible framebuffer hashes. The accepted run must
+also preserve all prior ownership, guard, upload and exact-token invariants.
+
+The accounting gate replaces the ad-hoc aggregate with a platform-neutral,
+checked-`uint64_t` ledger. `TEXTURE_RESIDENCY_READY` partitions all six
+fence-retired allocations and separately identifies the base mip payload,
+source lightmap and two live dynamic-lightmap images. The allocation partition
+must equal the reported pool-resident total; the three texture payload classes
+must equal the texture-resident subtotal without being double-counted into the
+pool total.
+
+Every frame is recorded in order before submit. The ledger rejects a skipped or
+repeated frame, a changed transient footprint, a first/full lightmap upload
+outside the first use of each slot, a changed bounded-patch size or any integer
+overflow. Four `TEXTURE_UPLOAD_FRAME` bookends expose the exact component and
+cumulative values. `TEXTURE_UPLOAD_SUMMARY` proves the complete configured
+sequence through component totals, min/max bytes, exactly two full updates,
+all remaining bounded updates and an order-sensitive FNV-64 digest. The strict
+accounting and final validators recompute the closed-form totals and require the
+final sampled digest to match the summary and completion records. The final
+60,000-frame build additionally emits `BSP_TEXTURE_PATH_FINAL_COMPLETE`, which
+joins the mip, opaque/alpha/sky draw, pipeline, sampler, accounting, readback,
+ownership and guard contracts in one terminal record.
+
+This texture-only gate declares `input_dependency=none` and
+`input_gate=not-repeated`. Controller connection and movement remain observed
+telemetry, but are not success criteria because the input path did not change
+after its earlier hardware gate. This keeps the accounting proof from silently
+becoming another DualSense movement proof.
+
 ## Continuous-runtime closure
 
 The production runtime uses one persistent frame state machine and emits a
