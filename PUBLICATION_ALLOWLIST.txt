@@ -116,3 +116,7 @@ tools/build_shader.py
 tools/generate_agc_metadata.py
 tools/package_release.sh
 tools/build_native.sh
+experiments/prx-gate/README.md
+experiments/prx-gate/build.sh
+experiments/prx-gate/main.c
+experiments/prx-gate/param.json
