@@ -18,9 +18,5 @@ int main(void)
     assert(ps5_depth_build_d32_no_htile(regs, address + 1u,
                                         1920u, 1080u) == -1);
     assert(ps5_depth_build_d32_no_htile(regs, address, 0u, 1080u) == -1);
-    ps5_agc_register disabled[PS5_DEPTH_DISABLED_REGISTER_COUNT];
-    assert(ps5_depth_build_disabled(disabled) == 0);
-    assert(disabled[0].offset == 0x200u && disabled[0].value == 0u);
-    assert(ps5_depth_build_disabled(0) == -1);
     return 0;
 }

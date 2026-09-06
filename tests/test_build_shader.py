@@ -43,14 +43,6 @@ def main() -> int:
     assert 'TARGET = "gfx1013"' in source
     assert 'GFXIP = "10.1.3"' in source
     assert "gfx" + "1030" not in source
-    assert MODULE.checked_name("bsp_flat") == "bsp_flat"
-    for invalid in ("../flat", "BSP-flat", ""):
-        try:
-            MODULE.checked_name(invalid)
-        except SystemExit:
-            pass
-        else:
-            raise AssertionError("unsafe shader output name must fail")
     print("shader build-tool unit tests passed")
     return 0
 

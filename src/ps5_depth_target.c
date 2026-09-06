@@ -27,12 +27,3 @@ int ps5_depth_build_d32_no_htile(
         out[i] = plan[i];
     return 0;
 }
-
-int ps5_depth_build_disabled(
-    ps5_agc_register out[PS5_DEPTH_DISABLED_REGISTER_COUNT])
-{
-    if (!out)
-        return -1;
-    out[0] = (ps5_agc_register){0x200, 0};
-    return 0;
-}

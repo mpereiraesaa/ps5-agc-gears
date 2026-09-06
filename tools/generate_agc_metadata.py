@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from pathlib import Path
 
 
@@ -140,40 +139,30 @@ def derive(manifest: dict[str, object]) -> dict[str, object]:
     }
 
 
-def checked_identifier(value: str, label: str) -> str:
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
-        raise ValueError(f"invalid {label}: {value}")
-    return value
-
-
-def render_header(values: dict[str, object], prefix: str = "GEARS",
-                  symbol_prefix: str = "ps5_gears") -> str:
-    prefix = checked_identifier(prefix, "macro prefix").upper()
-    symbol_prefix = checked_identifier(symbol_prefix, "symbol prefix")
-
+def render_header(values: dict[str, object]) -> str:
     def rows(name: str, registers: list[tuple[int, int]]) -> str:
         body = ",\n".join(
             f"    {{{offset:#05x}u, {value:#010x}u}}"
             for offset, value in registers
         )
-        return f"static const ps5_agc_register {symbol_prefix}_{name}[] = {{\n{body}\n}};"
+        return f"static const ps5_agc_register {name}[] = {{\n{body}\n}};"
 
-    return f"""#ifndef PS5_AGC_{prefix}_SHADER_METADATA_H
-#define PS5_AGC_{prefix}_SHADER_METADATA_H
+    return f"""#ifndef PS5_AGC_GEARS_SHADER_METADATA_H
+#define PS5_AGC_GEARS_SHADER_METADATA_H
 #include \"ps5_agc.h\"
 /* Generated solely from the project-owned gfx1013 LLPC/PAL ELF. */
-#define PS5_{prefix}_GS_ISA_BYTES {values['gs_isa_bytes']}u
-#define PS5_{prefix}_PS_ISA_BYTES {values['ps_isa_bytes']}u
-#define PS5_{prefix}_GS_RSRC1 {values['gs_rsrc1']:#010x}u
-#define PS5_{prefix}_GS_RSRC2 {values['gs_rsrc2']:#010x}u
-#define PS5_{prefix}_PS_RSRC1 {values['ps_rsrc1']:#010x}u
-#define PS5_{prefix}_PS_RSRC2 {values['ps_rsrc2']:#010x}u
-#define PS5_{prefix}_GE_CNTL {values['ge_cntl']:#010x}u
-#define PS5_{prefix}_SHADER_STAGES_EN {values['shader_stages_en']:#010x}u
-#define PS5_{prefix}_GS_OUT_PRIM_TYPE 0x00000002u
-#define PS5_{prefix}_DRAW_MODIFIER {values['draw_modifier']:#018x}ull
-{rows('pre_raster_cx', values['pre_raster_cx'])}
-{rows('pixel_cx', values['pixel_cx'])}
+#define PS5_GEARS_GS_ISA_BYTES {values['gs_isa_bytes']}u
+#define PS5_GEARS_PS_ISA_BYTES {values['ps_isa_bytes']}u
+#define PS5_GEARS_GS_RSRC1 {values['gs_rsrc1']:#010x}u
+#define PS5_GEARS_GS_RSRC2 {values['gs_rsrc2']:#010x}u
+#define PS5_GEARS_PS_RSRC1 {values['ps_rsrc1']:#010x}u
+#define PS5_GEARS_PS_RSRC2 {values['ps_rsrc2']:#010x}u
+#define PS5_GEARS_GE_CNTL {values['ge_cntl']:#010x}u
+#define PS5_GEARS_SHADER_STAGES_EN {values['shader_stages_en']:#010x}u
+#define PS5_GEARS_GS_OUT_PRIM_TYPE 0x00000002u
+#define PS5_GEARS_DRAW_MODIFIER {values['draw_modifier']:#018x}ull
+{rows('ps5_gears_pre_raster_cx', values['pre_raster_cx'])}
+{rows('ps5_gears_pixel_cx', values['pixel_cx'])}
 #endif
 """
 
@@ -184,15 +173,11 @@ def main() -> int:
                         default=ROOT / "build/shaders/gears_lit.manifest.json")
     parser.add_argument("--output", type=Path,
                         default=ROOT / "build/generated/gears_shader_metadata.h")
-    parser.add_argument("--prefix", default="GEARS")
-    parser.add_argument("--symbol-prefix", default="ps5_gears")
     args = parser.parse_args()
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     values = derive(manifest)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        render_header(values, args.prefix, args.symbol_prefix), encoding="utf-8"
-    )
+    args.output.write_text(render_header(values), encoding="utf-8")
     print(args.output)
     return 0
 
