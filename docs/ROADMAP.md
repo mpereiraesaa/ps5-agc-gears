@@ -82,6 +82,6 @@
   transient resources selected through generated pipeline permutations.
 - [x] Add host contracts and a fail-closed structured-evidence validator for
   the resource-foundation path.
-- [ ] Pass and archive the Phase 2 60,000-frame hardware gate on FW 12.02.
+- [x] Pass and archive the Phase 2 60,000-frame hardware gate on FW 12.02.
 - [x] Require pull requests on `main`; require the host CI check after this PR
   establishes its final check context.

@@ -131,5 +131,18 @@ The run is accepted only if `validate_bsp_resource_evidence.py` proves:
   persistent allocations reclaimed;
 - a clean `bsp-resource-soak-complete` BYE.
 
-Until such a manifest is recorded, the signed native build is build evidence,
-not hardware acceptance.
+Run
+`20260906T130036578Z_PPSA99997_ps5-agc-gears_0x5ed84765862b` satisfies this
+contract on FW 12.02. Its 1,127-record manifest proves 60,000 completed and
+connected frames, 164 textures, 3,936 descriptor DWORDs, two reusable
+transient slots, exact final token `72567767493216`, intact guards, zero errors,
+four reclaimed persistent allocations and a gap-free
+`bsp-resource-soak-complete` BYE. The transcript SHA-256 is
+`8a7b8ce9aa03552f92c1717ff7bb4d836b616a8b399cf938951ac21f21e4c66e`.
+
+Two private Remote Play captures independently show the green overlay at
+different pulse intensities while the map region remains byte-identical. The
+operator confirmed the animation live. Exact artifact, bundle, manifest and
+capture hashes are recorded in `HARDWARE_VALIDATION.md`; no private map,
+compiled binary, telemetry transcript or game capture crosses the repository
+boundary.

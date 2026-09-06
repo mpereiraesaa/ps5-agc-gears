@@ -48,14 +48,22 @@ depend on the parent laboratory.
 
 ## Hardware evidence versus repository evidence
 
-The 300-frame and 10,000-frame FW 12.02 runs cited in the README used title
-`PPSA99997` built entirely by `tools/build_native.sh` from this repository and
-the pinned public foundation. The strict 300-frame run proves the complete
-opening telemetry identity, exact frame ownership and clean teardown contract.
-The 10,000-frame run proves prolonged GPU/ownership behavior but predates the
-final `LOG_BOOT_MONOTONIC_NS` opening-record correction; this limitation is
-preserved rather than silently reclassifying that transcript. Exact run IDs and
-artifact hashes are listed in `HARDWARE_VALIDATION.md`.
+The 300-frame, 10,000-frame and Phase 2 60,000-frame FW 12.02 runs cited in the
+README used title `PPSA99997` built entirely by this repository's native build
+path and the pinned public foundation. The strict 300-frame run proves the
+complete opening telemetry identity, exact frame ownership and clean teardown
+contract. The earlier 10,000-frame run proves prolonged GPU/ownership behavior
+but predates the final `LOG_BOOT_MONOTONIC_NS` opening-record correction; this
+limitation is preserved rather than silently reclassifying that transcript.
+
+The Phase 2 run
+`20260906T130036578Z_PPSA99997_ps5-agc-gears_0x5ed84765862b` proves the
+resource-pool, per-frame transient, descriptor-table, constant-buffer,
+pipeline-permutation and cache-transition path for 60,000 frames. Its public
+claim is limited to sanitized identities, hashes and outcomes. The private
+`c1a0` BSP, compiled artifact, transcript and Remote Play captures remain
+outside this repository. Exact hashes and validator results are listed in
+`HARDWARE_VALIDATION.md`.
 
 ## Rules for later extraction
 
