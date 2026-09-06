@@ -7,14 +7,27 @@ the Gears renderer or its release build.
 
 ## Questions the gate answers
 
-| Gate | Build | Question |
-| --- | --- | --- |
-| 1 | `PRX_GATE_RUNTIME_LOAD=0` | Does the loader accept our module as a `DT_NEEDED` dependency from `sce_module/` and bind NID imports to it before `main()`? |
-| 2 | `PRX_GATE_RUNTIME_LOAD=1` | Do `sceKernelLoadStartModule`, `sceKernelDlsym` and `sceKernelStopUnloadModule` work on that module from a native title? |
-| both | | Does the loader invoke `module_start`? The module sets `hello_started`; the title reports it without assuming either answer. |
+| Gate | Build | Question | Result on FW 12.02 (2026-09-06) |
+| --- | --- | --- | --- |
+| 1 | `PRX_GATE_RUNTIME_LOAD=0` | Does the loader bind a `DT_NEEDED` application module from `sce_module/` before `main()`? | **No.** Only platform-known entries such as `libc.prx` are loaded at start; the imports stay zero. Not a tooling defect. |
+| 2 | `PRX_GATE_RUNTIME_LOAD=1` | Does `sceKernelLoadStartModule` load our module, can its exports be called, does `sceKernelStopUnloadModule` work? | **Yes**, once the module satisfies the two loader contracts below. Run `20260906T085730845Z_PPSA99999_prx-gate_0x519451728697`, `PRX_GATE_VERIFIED`, gap-free BYE. |
+| both | | Does the loader invoke `module_start`? | No. It calls `e_entry` as the start routine and requires it to return 0. |
 
-One variable per iteration: run gate 1 first. Gate 2 changes only the load
-mechanism; the module, title identity and telemetry stay the same.
+Loader contracts established by bisection (about twenty launches, each
+changing one variable) and now enforced by the module converter:
+
+- `DT_PLTGOT` must be a three-entry table; the loader writes entries 1 and 2.
+  A one-entry GOT with the module parameters behind it is corrupted before
+  validation and rejected with `0x80020063`.
+- `e_entry` is executed after mapping and must return 0; `int3` filler there
+  raises SIGTRAP and a garbage return yields `0x80020016`.
+
+Symbol resolution: `sceKernelDlsym` answers `0x80020003` for every
+application module, including the boilerplate's `libc.prx`, whatever the hash
+table holds. The module therefore publishes a static, relocated export
+descriptor (magic `PRXDESC1`) and the host finds it by scanning the segments
+returned by `sceKernelGetModuleInfo`. That is the validated resolution path and
+the one a Xash3D library loader should use.
 
 ## Build
 
@@ -51,28 +64,27 @@ A gate passes only when the `ps5logd` manifest shows title `PPSA99999`, app
 transcript contains, in order:
 
 ```text
-PRX_GATE_BEGIN mode=<dependency|runtime>
+PRX_GATE_BEGIN mode=runtime module=/app0/sce_module/hello.prx fw=12.02
+load_start_module ... handle=0x000000d0 result=0x00000000
+module_info rc=0x00000000 name=hello.prx segments=4
+descriptor at 0x... version=1 count=6
 hello_version=65536 expected=65536 ok
 hello_add(1,2)=3 expected=3 ok
 hello_add(40,2)=42 expected=42 ok
 hello_sleep_and_count=3 expected=3 ok
-PRX_GATE_VERIFIED mode=<dependency|runtime> exports=4 module_start=<invoked|not-invoked>
+stop_unload_module rc=0x00000000 result=0x00000000
+PRX_GATE_VERIFIED mode=runtime exports=4 module_start=not-invoked
 BYE seq=<n> reason=complete
 ```
 
-Gate 2 additionally requires `load_start_module handle=` with a positive
-handle, four `dlsym ... rc=0x00000000` lines with non-zero addresses, and
-`stop_unload_module rc=0x00000000`.
-
-A launch return code, a shell without an error dialog, or a transcript without
-BYE is not a pass. A pre-entry rejection in gate 1 points at the module's
-loader-visible shape; a `dlsym` failure in gate 2 points at the export
-encoding or the hash table.
+The passing run is archived with artifact and module hashes in the private
+laboratory under `research/gpu/captures/runtime/`.
 
 ## After the gates
 
-If both pass, the Xash3D port keeps its modular layout: engine executable
-plus renderer, menu, client and server as `sce_module/*.prx`, with the
-engine's library loader mapped to the two kernel calls used here. If either
-fails, static linking remains the fallback and the failure record goes into
-the plan's risk table.
+The Xash3D port keeps its modular layout: engine executable plus renderer,
+menu, client and server as `sce_module/*.prx`, loaded with
+`sceKernelLoadStartModule` and resolved through each module's export
+descriptor. Static linking is no longer needed as a fallback for the engine's
+own libraries; load-time `DT_NEEDED` binding and `sceKernelDlsym` are simply
+not part of the design on this firmware.
