@@ -3,20 +3,6 @@
 #include <limits.h>
 #include <string.h>
 
-/*
- * Field positions follow Mesa's MIT-licensed GFX10 descriptor builders in
- * ac_descriptors.c and the register descriptions in gfx10-rsrc.json.  Keeping
- * the small checked builder local avoids publishing generated AMD headers.
- */
-enum {
-    GFX10_FORMAT_8_8_8_8_UNORM = 56,
-    SQ_SEL_X = 4,
-    SQ_SEL_Y = 5,
-    SQ_SEL_Z = 6,
-    SQ_SEL_W = 7,
-    SQ_RSRC_IMG_2D = 9,
-};
-
 static int valid_address(uint64_t address)
 {
     return address != 0u && (address & UINT64_C(255)) == 0u &&
@@ -29,39 +15,17 @@ int bsp_gfx1013_combined_descriptor(
     enum bsp_texture_address_mode address_mode,
     enum bsp_texture_filter filter)
 {
-    if (!out || !valid_address(gpu_address) || width == 0u ||
-        height == 0u || width > 16384u || height > 16384u ||
-        width > UINT32_MAX / 4u || row_pitch < width * 4u ||
-        (row_pitch & 255u) != 0u || row_pitch / 4u > 16384u ||
-        (address_mode != BSP_TEXTURE_REPEAT &&
-         address_mode != BSP_TEXTURE_CLAMP_LAST_TEXEL) ||
-        (filter != BSP_TEXTURE_FILTER_POINT &&
-         filter != BSP_TEXTURE_FILTER_BILINEAR))
+    if (!out)
         return -1;
-
-    const uint32_t width_minus_one = width - 1u;
-    const uint32_t pitch_minus_one = row_pitch / 4u - 1u;
     memset(out, 0, BSP_GFX1013_COMBINED_DWORDS * sizeof(*out));
-    out[0] = (uint32_t)(gpu_address >> 8);
-    out[1] = (uint32_t)(gpu_address >> 40) |
-             (GFX10_FORMAT_8_8_8_8_UNORM << 20) |
-             ((width_minus_one & 3u) << 30);
-    out[2] = ((width_minus_one >> 2) & 0xfffu) |
-             ((height - 1u) << 14) | (UINT32_C(1) << 31);
-    out[3] = SQ_SEL_X | (SQ_SEL_Y << 3) | (SQ_SEL_Z << 6) |
-             (SQ_SEL_W << 9) | ((uint32_t)SQ_RSRC_IMG_2D << 28);
-    if (row_pitch / 4u != width)
-        out[4] = (pitch_minus_one & 0x1fffu) |
-                 (((pitch_minus_one >> 13) & 1u) << 13);
-    out[5] = 4u << 20;
-
-    out[8] = (uint32_t)address_mode |
-             ((uint32_t)address_mode << 3) |
-             ((uint32_t)address_mode << 6);
-    out[10] = filter == BSP_TEXTURE_FILTER_BILINEAR
-                  ? (UINT32_C(1) << 20) | (UINT32_C(1) << 22)
-                  : 0u;
-    return 0;
+    return ps5_gfx1013_build_tsharp_rgba8(out, gpu_address, width, height,
+                                          row_pitch) == 0 &&
+                   ps5_gfx1013_build_ssharp(
+                       out + BSP_GFX1013_IMAGE_DWORDS,
+                       (enum ps5_gfx1013_address_mode)address_mode,
+                       (enum ps5_gfx1013_filter)filter) == 0
+               ? 0
+               : -1;
 }
 
 int bsp_texture_table_required_dwords(const BspBundleView *bundle,

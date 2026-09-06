@@ -47,9 +47,14 @@ $(eval $(call test_rule,test_bsp_flat_draw,tests/test_bsp_flat_draw.c src/bsp_fl
 $(eval $(call test_rule,test_bsp_flat_scene,tests/test_bsp_flat_scene.c src/bsp_flat_scene.c,-lm))
 $(eval $(call test_rule,test_bsp_noclip,tests/test_bsp_noclip.c src/bsp_noclip.c,-lm))
 $(eval $(call test_rule,test_bsp_runtime_plan,tests/test_bsp_runtime_plan.c src/bsp_runtime_plan.c,))
-$(eval $(call test_rule,test_bsp_texture_descriptor,tests/test_bsp_texture_descriptor.c src/bsp_texture_descriptor.c,))
+$(eval $(call test_rule,test_bsp_texture_descriptor,tests/test_bsp_texture_descriptor.c src/bsp_texture_descriptor.c src/ps5_gfx1013_descriptor.c,))
 $(eval $(call test_rule,test_bsp_textured_draw,tests/test_bsp_textured_draw.c src/bsp_textured_draw.c src/ps5_gpu_span.c,))
 $(eval $(call test_rule,test_ps5_bump_allocator,tests/test_ps5_bump_allocator.c src/ps5_bump_allocator.c,))
+$(eval $(call test_rule,test_ps5_resource_pool,tests/test_ps5_resource_pool.c src/ps5_resource_pool.c,))
+$(eval $(call test_rule,test_ps5_transient_ring,tests/test_ps5_transient_ring.c src/ps5_transient_ring.c,))
+$(eval $(call test_rule,test_ps5_gfx1013_descriptor,tests/test_ps5_gfx1013_descriptor.c src/ps5_gfx1013_descriptor.c,))
+$(eval $(call test_rule,test_ps5_cache_contract,tests/test_ps5_cache_contract.c src/ps5_cache_contract.c src/ps5_gpu_span.c,))
+$(eval $(call test_rule,test_ps5_transient_table,tests/test_ps5_transient_table.c src/ps5_transient_table.c src/ps5_transient_ring.c src/ps5_gpu_span.c,))
 $(eval $(call test_rule,inspect_bsp_bundle,tools/inspect_bsp_bundle.c src/bsp_bundle.c src/bsp_texture_descriptor.c,-Isrc))
 
 TESTS := test_gears_mesh test_gears_scene test_gears_frame_tracker \
@@ -62,13 +67,17 @@ TESTS := test_gears_mesh test_gears_scene test_gears_frame_tracker \
 	test_ps5log_host test_ps5_shader_header test_ps5_agc_writer \
 	test_ps5_agc_submit test_ps5_videoout test_bsp_bundle test_bsp_command_plan \
 	test_bsp_flat_draw test_bsp_flat_scene test_bsp_noclip test_bsp_runtime_plan \
-	test_bsp_texture_descriptor test_bsp_textured_draw test_ps5_bump_allocator
+	test_bsp_texture_descriptor test_bsp_textured_draw test_ps5_bump_allocator \
+	test_ps5_resource_pool test_ps5_transient_ring \
+	test_ps5_gfx1013_descriptor test_ps5_cache_contract \
+	test_ps5_transient_table
 
 test: $(addprefix $(BUILD)/,$(TESTS))
 	@set -e; for test in $^; do $$test; done
 	python3 tests/test_shader_contract.py
 	python3 tests/test_build_shader.py
 	python3 tests/test_generate_agc_metadata.py
+	python3 tests/test_generate_pipeline_table.py
 	python3 tests/test_generate_bsp_build_metadata.py
 	python3 tests/test_native_contract.py
 	python3 tests/test_bake_bsp.py
@@ -97,6 +106,12 @@ shaders:
 	python3 tools/build_shader.py --pipe shaders/bsp_textured.pipe \
 		--name bsp_textured --amdllpc "$(AMDLLPC)" \
 		--readelf "$(LLVM_READELF)" --output-dir build/shaders
+	python3 tools/build_shader.py --pipe shaders/bsp_resource.pipe \
+		--name bsp_resource --amdllpc "$(AMDLLPC)" \
+		--readelf "$(LLVM_READELF)" --output-dir build/shaders
+	python3 tools/build_shader.py --pipe shaders/bsp_overlay.pipe \
+		--name bsp_overlay --amdllpc "$(AMDLLPC)" \
+		--readelf "$(LLVM_READELF)" --output-dir build/shaders
 	python3 tools/generate_agc_metadata.py \
 		--manifest build/shaders/gears_lit.manifest.json \
 		--output build/generated/gears_shader_metadata.h
@@ -108,6 +123,15 @@ shaders:
 		--manifest build/shaders/bsp_textured.manifest.json \
 		--output build/generated/bsp_textured_shader_metadata.h \
 		--prefix BSP_TEXTURED --symbol-prefix ps5_bsp_textured
+	python3 tools/generate_agc_metadata.py \
+		--manifest build/shaders/bsp_resource.manifest.json \
+		--output build/generated/bsp_resource_shader_metadata.h \
+		--prefix BSP_RESOURCE --symbol-prefix ps5_bsp_resource
+	python3 tools/generate_agc_metadata.py \
+		--manifest build/shaders/bsp_overlay.manifest.json \
+		--output build/generated/bsp_overlay_shader_metadata.h \
+		--prefix BSP_OVERLAY --symbol-prefix ps5_bsp_overlay
+	python3 tools/generate_pipeline_table.py
 
 native:
 	bash tools/build_native.sh

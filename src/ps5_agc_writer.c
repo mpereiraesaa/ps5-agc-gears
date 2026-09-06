@@ -138,6 +138,24 @@ int ps5_agc_writer_fill_depth(
     return finish_writer(cursor, &writer, 1u, capacity);
 }
 
+int ps5_agc_writer_acquire_mem(
+    uint32_t **cursor, uint32_t capacity, const void *base, uint64_t bytes,
+    uint32_t gcr_control, const void *gpu_mapping,
+    size_t gpu_mapping_bytes, ps5_agc_emit_acquire_mem_fn emit)
+{
+    struct ps5_agc_command_buffer writer;
+    if (!emit || !base || bytes == 0u || bytes > SIZE_MAX ||
+        ((uintptr_t)base & 255u) != 0u || (bytes & 255u) != 0u ||
+        gcr_control == 0u || capacity < 8u ||
+        begin_writer(&writer, cursor, capacity) != PS5_AGC_WRITER_OK)
+        return PS5_AGC_WRITER_PRECONDITION;
+    if (!ps5_gpu_span_visible(gpu_mapping, gpu_mapping_bytes, base,
+                              (size_t)bytes))
+        return PS5_AGC_WRITER_NOT_GPU_VISIBLE;
+    (void)emit(&writer, 0u, 0u, gcr_control, base, bytes, 0u);
+    return finish_writer(cursor, &writer, 8u, 8u);
+}
+
 int ps5_agc_writer_wait_rendering(
     uint32_t **cursor, uint32_t capacity, uint32_t driver_mode,
     int32_t video_handle, int32_t buffer_index,

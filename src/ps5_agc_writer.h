@@ -22,6 +22,9 @@ typedef uint32_t *(*ps5_agc_emit_indirect_fn)(
 typedef uint32_t *(*ps5_agc_emit_dma_fill_fn)(
     void *writer, void *destination, uint32_t repeated_word,
     uint32_t byte_count);
+typedef uint32_t *(*ps5_agc_emit_acquire_mem_fn)(
+    void *writer, uint8_t engine, uint32_t cb_db_op, uint32_t gcr_control,
+    const volatile void *base, uint64_t size_bytes, uint32_t poll_cycles);
 typedef uint32_t (*ps5_agc_wait_size_fn)(void);
 typedef uint32_t (*ps5_agc_wait_emit_fn)(
     uint32_t **cursor, uint32_t packet_dwords, uint32_t reserved,
@@ -63,6 +66,11 @@ int ps5_agc_writer_fill_depth(
     uint32_t repeated_word, uint32_t byte_count,
     const void *gpu_mapping, size_t gpu_mapping_bytes,
     ps5_agc_emit_dma_fill_fn emit);
+
+int ps5_agc_writer_acquire_mem(
+    uint32_t **cursor, uint32_t capacity_dwords, const void *base,
+    uint64_t bytes, uint32_t gcr_control, const void *gpu_mapping,
+    size_t gpu_mapping_bytes, ps5_agc_emit_acquire_mem_fn emit);
 
 int ps5_agc_writer_wait_rendering(
     uint32_t **cursor, uint32_t capacity_dwords, uint32_t driver_mode,

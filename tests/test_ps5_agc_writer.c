@@ -66,6 +66,17 @@ static uint32_t *emit_fill(void *writer, void *destination, uint32_t word,
     return ((struct ps5_agc_command_buffer *)writer)->up;
 }
 
+static uint32_t *emit_acquire(void *writer, uint8_t engine,
+                              uint32_t cb_db_op, uint32_t gcr_control,
+                              const volatile void *base, uint64_t bytes,
+                              uint32_t poll_cycles)
+{
+    assert(engine == 0u && cb_db_op == 0u && gcr_control == 0x4380u);
+    assert(base && bytes == 256u && poll_cycles == 0u);
+    advance(writer, 8u);
+    return ((struct ps5_agc_command_buffer *)writer)->up;
+}
+
 static uint32_t get_wait_size(void) { return wait_size; }
 
 static uint32_t emit_wait(uint32_t **cursor, uint32_t words,
@@ -82,7 +93,7 @@ int main(void)
 {
     union {
         uint64_t align;
-        uint32_t words[128];
+        _Alignas(256) uint32_t words[128];
     } gpu = {0};
     uint32_t *cursor = gpu.words;
 
@@ -126,11 +137,17 @@ int main(void)
            PS5_AGC_WRITER_OK);
     assert(cursor == gpu.words + 53);
 
+    assert(ps5_agc_writer_acquire_mem(
+               &cursor, 64u, gpu.words + 64u, 256u, 0x4380u,
+               gpu.words, sizeof(gpu.words), emit_acquire) ==
+           PS5_AGC_WRITER_OK);
+    assert(cursor == gpu.words + 61);
+
     wait_size = 5u;
     assert(ps5_agc_writer_wait_rendering(&cursor, 16u, 0u, 7, 1,
                                          get_wait_size, emit_wait) ==
            PS5_AGC_WRITER_OK);
-    assert(cursor == gpu.words + 58);
+    assert(cursor == gpu.words + 66);
 
     uint32_t *const stable = cursor;
     behavior = 1u;

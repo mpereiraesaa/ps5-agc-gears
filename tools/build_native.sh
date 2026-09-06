@@ -116,7 +116,9 @@ sources=(
     src/ps5_depth_target.c src/ps5_event_adapter.c
     src/ps5_frame_completion.c src/ps5_gpu_span.c src/ps5_pipeline.c
     src/ps5_present.c src/ps5_shader_header.c src/ps5_submission.c
-    src/ps5_surface.c src/ps5_videoout.c
+    src/ps5_surface.c src/ps5_videoout.c src/ps5_cache_contract.c
+    src/ps5_gfx1013_descriptor.c src/ps5_resource_pool.c
+    src/ps5_transient_ring.c src/ps5_transient_table.c
 )
 objects=()
 for source in "${sources[@]}"; do
