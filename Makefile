@@ -61,6 +61,7 @@ $(eval $(call test_rule,test_bsp_resource_frame,tests/test_bsp_resource_frame.c 
 $(eval $(call test_rule,test_bsp_dynamic_lightmap,tests/test_bsp_dynamic_lightmap.c src/bsp_dynamic_lightmap.c src/ps5_transient_ring.c,-lm))
 $(eval $(call test_rule,test_bsp_alpha_test,tests/test_bsp_alpha_test.c src/bsp_alpha_test.c,-lm))
 $(eval $(call test_rule,test_bsp_sky,tests/test_bsp_sky.c src/bsp_sky.c,-lm))
+$(eval $(call test_rule,test_bsp_texture_accounting,tests/test_bsp_texture_accounting.c src/bsp_texture_accounting.c,))
 $(eval $(call test_rule,test_bsp_resource_draw,tests/test_bsp_resource_draw.c src/bsp_resource_draw.c src/ps5_gpu_span.c,))
 $(eval $(call test_rule,inspect_bsp_bundle,tools/inspect_bsp_bundle.c src/bsp_bundle.c src/bsp_dynamic_lightmap.c src/bsp_alpha_test.c src/bsp_sky.c src/bsp_texture_descriptor.c src/ps5_gfx1013_descriptor.c src/ps5_transient_ring.c,-Isrc -lm))
 
@@ -78,7 +79,8 @@ TESTS := test_gears_mesh test_gears_scene test_gears_frame_tracker \
 	test_ps5_resource_pool test_ps5_transient_ring \
 	test_ps5_gfx1013_descriptor test_ps5_cache_contract \
 	test_ps5_transient_table test_bsp_resource_frame test_bsp_resource_draw \
-	test_bsp_dynamic_lightmap test_bsp_alpha_test test_bsp_sky
+	test_bsp_dynamic_lightmap test_bsp_alpha_test test_bsp_sky \
+	test_bsp_texture_accounting
 
 test: $(addprefix $(BUILD)/,$(TESTS))
 	@set -e; for test in $^; do $$test; done
@@ -96,6 +98,7 @@ test: $(addprefix $(BUILD)/,$(TESTS))
 	python3 tests/test_validate_texture_path_mip_evidence.py
 	python3 tests/test_validate_texture_path_alpha_evidence.py
 	python3 tests/test_validate_texture_path_sky_evidence.py
+	python3 tests/test_validate_texture_path_accounting_evidence.py
 	rm -rf build tools/__pycache__ tests/__pycache__
 
 bsp-bundle: $(BUILD)/inspect_bsp_bundle
@@ -200,6 +203,11 @@ bsp-texture-sky-native-release: bsp-bundle
 	BSP_BUNDLE="$(CURDIR)/build/bsp/map.ps5bsp" BSP_NOCLIP=1 \
 		BSP_TEXTURED=1 BSP_RESOURCE_FOUNDATION=1 BSP_TEXTURE_PATH=1 \
 		BSP_TEXTURE_SKY_GATE=1 bash tools/build_native.sh
+
+bsp-texture-accounting-native-release: bsp-bundle
+	BSP_BUNDLE="$(CURDIR)/build/bsp/map.ps5bsp" BSP_NOCLIP=1 \
+		BSP_TEXTURED=1 BSP_RESOURCE_FOUNDATION=1 BSP_TEXTURE_PATH=1 \
+		BSP_TEXTURE_ACCOUNTING_GATE=1 bash tools/build_native.sh
 
 audit:
 	python3 tools/audit_publication.py

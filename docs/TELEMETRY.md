@@ -66,6 +66,30 @@ must share the same camera, anisotropic sampler and dynamic-lightmap pattern,
 while producing distinct GPU-visible framebuffer hashes. The accepted run must
 also preserve all prior ownership, guard, upload and exact-token invariants.
 
+The accounting gate replaces the ad-hoc aggregate with a platform-neutral,
+checked-`uint64_t` ledger. `TEXTURE_RESIDENCY_READY` partitions all six
+fence-retired allocations and separately identifies the base mip payload,
+source lightmap and two live dynamic-lightmap images. The allocation partition
+must equal the reported pool-resident total; the three texture payload classes
+must equal the texture-resident subtotal without being double-counted into the
+pool total.
+
+Every frame is recorded in order before submit. The ledger rejects a skipped or
+repeated frame, a changed transient footprint, a first/full lightmap upload
+outside the first use of each slot, a changed bounded-patch size or any integer
+overflow. Four `TEXTURE_UPLOAD_FRAME` bookends expose the exact component and
+cumulative values. `TEXTURE_UPLOAD_SUMMARY` proves the complete 10,000-frame
+sequence through component totals, min/max bytes, 2 full plus 9,998 bounded
+updates and an order-sensitive FNV-64 digest. The strict validator recomputes
+the closed-form totals and requires the final sampled digest to match both the
+summary and `BSP_TEXTURE_PATH_ACCOUNTING_COMPLETE`.
+
+This texture-only gate declares `input_dependency=none` and
+`input_gate=not-repeated`. Controller connection and movement remain observed
+telemetry, but are not success criteria because the input path did not change
+after its earlier hardware gate. This keeps the accounting proof from silently
+becoming another DualSense movement proof.
+
 ## Continuous-runtime closure
 
 The production runtime uses one persistent frame state machine and emits a

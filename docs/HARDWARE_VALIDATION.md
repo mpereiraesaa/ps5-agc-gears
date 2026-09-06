@@ -5,6 +5,50 @@ They are not compatibility claims for other firmware or consoles. Run logs and
 captures live in the private parent laboratory; this public boundary records
 only sanitized identifiers, hashes, outcomes and known limitations.
 
+## Phase 3 resident/upload-accounting gate
+
+The fifth ordered Phase 3 gate passed 10,000 frames on FW 12.02:
+
+- Run: `20260906T180203834Z_PPSA99997_ps5-agc-gears_0x6f4b7cbd361b`
+- Native ELF SHA-256:
+  `8bf3622af44ace9f013054119f2e80887c48031df30050106402a9daf1a13308`
+- Signed fSELF SHA-256:
+  `eb3d0a18e5abe0e4646386e74f884a6a594051fd81ad870175f562953ece6792`
+- Private bundle SHA-256/bytes:
+  `7536b8a28be3b815f93b35f035f9f957952e379722657194e1ab15172f9604e1` /
+  8,741,888
+- Transcript/manifest SHA-256:
+  `8f64357391ac9ca00392e6483694f8035d83ceaa72dc9465699f8733b16aa20d` /
+  `205d5f418d38ee8c165d79b4c8a658853df714ba310f64846d2a4cf6ff14dfbf`
+- Requested/completed: 10,000/10,000; controller dependency: none
+- Pool-resident/texture-payload bytes: 68,731,904 / 12,251,392
+- Total transient/lightmap/upload bytes:
+  127,000,000 / 6,671,872 / 133,671,872
+- Upload frames: 2 full plus 9,998 bounded; sequence digest:
+  `9ee815de96b54c11`
+- Mip chains and opaque/alpha/sky draws: 122 and 2,915/137/158
+- Final alternating-lightmap GPU readbacks:
+  `068f5c03c04419eb` / `6a7e900866458fb0` (distinct)
+- Fence and VideoOut tokens: exact; guards intact; renderer errors: 0
+- Teardown: gap-free BYE at sequence 226, six allocations reclaimed,
+  exact-title closure and two stable healthy four-service checks
+
+The strict validator recomputed every byte total, linked the terminal resource
+readbacks to the two deterministic lightmap patterns and accepted the immutable
+manifest against the exact bundle identity. A private 1280x720 direct-stream
+capture shows the complete textured scene and overlay; its SHA-256 is
+`525063dbd05d35b7543a60414c3fe9811d52b303d15b4baa7ae24c2c5f0b47b6`.
+Chiaki used the registered console directly from its CLI helper, without its
+client window, pairing or re-registration.
+
+An earlier attempt reached all 10,000 clean frames but was correctly rejected
+with `parked-retain`: an inherited success condition required a connected
+controller even though input code was unchanged. The accepted artifact makes
+this boundary explicit with `input_gate=not-repeated` and
+`input_dependency=none`; pad-read failures are still fatal and connection
+counts remain observable. This gate proves consolidated texture accounting,
+not the pending final 60,000-frame closure.
+
 ## Phase 3 sky-pass gate
 
 The fourth ordered Phase 3 gate passed 10,000 frames on FW 12.02:

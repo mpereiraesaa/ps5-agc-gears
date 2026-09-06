@@ -227,6 +227,30 @@ def main() -> None:
     if "bsp-texture-sky-native-release" not in makefile or \
             "BSP_TEXTURE_SKY_GATE=1" not in makefile:
         raise SystemExit("sky gate release target missing")
+    for item in (
+        "BSP_TEXTURE_ACCOUNTING_GATE requires BSP_TEXTURE_PATH=1",
+        "-DPS5_TEXTURE_ACCOUNTING_GATE=1",
+        "src/bsp_texture_accounting.c",
+    ):
+        if item not in builder:
+            raise SystemExit(f"accounting gate native build contract missing: {item}")
+    for item in (
+        "BSP_TEXTURE_PATH_BOOT schema=1 slice=accounting",
+        "TEXTURE_RESIDENCY_READY schema=1 pool_capacity_bytes=%llu",
+        "TEXTURE_UPLOAD_FRAME schema=1 frame=%llu slot=%u",
+        "TEXTURE_UPLOAD_SUMMARY schema=1 frames=%llu",
+        "TEXTURE_FEATURES_READY mip_chains=%u opaque_draws=%u",
+        "BSP_LOOP_BEGIN mode=texture-path-accounting-soak",
+        "input_gate=not-repeated",
+        "input_dependency=none",
+        "BSP_TEXTURE_PATH_ACCOUNTING_COMPLETE frames=%llu",
+        'ps5log_close("bsp-texture-path-accounting-soak-complete")',
+    ):
+        if item not in source:
+            raise SystemExit(f"accounting gate runtime contract missing: {item}")
+    if "bsp-texture-accounting-native-release" not in makefile or \
+            "BSP_TEXTURE_ACCOUNTING_GATE=1" not in makefile:
+        raise SystemExit("accounting gate release target missing")
     for item in ('bsp_resource.gs.bin', 'bsp_resource.ps.bin',
                  'bsp_alpha_test.gs.bin', 'bsp_alpha_test.ps.bin',
                  'bsp_sky.gs.bin', 'bsp_sky.ps.bin',

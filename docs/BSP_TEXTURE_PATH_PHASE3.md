@@ -213,12 +213,63 @@ registered PS5 entry through the direct stream CLI helper, with no pairing or
 re-registration. The title was then closed by exact identity and all four
 console services remained healthy.
 
+## Gate 5: exact resident and upload accounting
+
+The fifth gate is complete on FW 12.02. A platform-neutral checked-`uint64_t`
+ledger replaces the earlier ad-hoc resident/upload counters. It partitions the
+six fence-retired pool allocations and separately accounts for base mip-chain
+payload, the source lightmap and both live dynamic-lightmap images without
+double-counting them as additional allocations.
+
+Every frame enters the ledger after both CPU-to-GPU flush plans have been
+formed and before submit. The ledger rejects skipped or repeated frame numbers,
+a changed transient footprint, incorrect full-versus-bounded lightmap uploads,
+an inconsistent bounded patch size and integer overflow. An order-sensitive
+FNV-64 digest covers the exact frame number and upload components. Four sampled
+records are only bookends; the final summary closes all 10,000 ledger entries.
+
+Acceptance requires:
+
+- an exact six-allocation resident partition and three-class texture-payload
+  partition bounded by pool capacity;
+- exact mip-chain byte identity and positive opaque, alpha and sky draw classes
+  using all four pipelines;
+- 127,000,000 transient plus 6,671,872 lightmap bytes, totalling 133,671,872;
+- exactly two 2,056,192-byte initial lightmap uploads followed by 9,998
+  256-byte bounded uploads;
+- a gap-free sequence digest matching the final sample, summary and completion
+  record;
+- distinct GPU-visible alternating-lightmap buffers, stable surrounding bytes,
+  intact guards, exact fence/VideoOut retirement, zero errors and six reclaimed
+  allocations;
+- a gap-free `bsp-texture-path-accounting-soak-complete` BYE.
+
+`validate_texture_path_accounting_evidence.py` accepted run
+`20260906T180203834Z_PPSA99997_ps5-agc-gears_0x6f4b7cbd361b`: 10,000 frames,
+226 structured records, 68,731,904 pool-resident bytes, 12,251,392 texture
+payload bytes, 133,671,872 uploaded bytes and sequence digest
+`9ee815de96b54c11`. The transcript and manifest SHA-256 values are
+`8f64357391ac9ca00392e6483694f8035d83ceaa72dc9465699f8733b16aa20d`
+and
+`205d5f418d38ee8c165d79b4c8a658853df714ba310f64846d2a4cf6ff14dfbf`.
+The native ELF/fSELF SHA-256 values are
+`8bf3622af44ace9f013054119f2e80887c48031df30050106402a9daf1a13308`
+and
+`eb3d0a18e5abe0e4646386e74f884a6a594051fd81ad870175f562953ece6792`.
+
+The private Remote Play capture SHA-256 is
+`525063dbd05d35b7543a60414c3fe9811d52b303d15b4baa7ae24c2c5f0b47b6`.
+The direct Chiaki CLI path reused the registered entry without opening the
+client window or pairing. Since input code was unchanged, this texture-only
+gate explicitly reports `input_dependency=none`; connection remains telemetry
+and pad-read errors remain fatal, but no DualSense movement gate is repeated.
+
 ## Remaining ordered gates
 
-Gates 1–4 do not claim completion of Phase 3. The remaining order is:
+Gates 1–5 do not claim completion of Phase 3. The remaining order is:
 
-1. consolidated resident/upload telemetry and reproducible host/hardware gates;
-2. the final 60,000-frame structured soak and pull request.
+1. the final 60,000-frame structured soak;
+2. final public audit, branch publication and pull request.
 
 Entities, PVS, water, sprites/models, platform/audio and engine integration
 remain outside this phase.

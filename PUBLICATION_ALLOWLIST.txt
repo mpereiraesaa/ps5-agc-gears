@@ -52,6 +52,8 @@ src/bsp_alpha_test.c
 src/bsp_alpha_test.h
 src/bsp_sky.c
 src/bsp_sky.h
+src/bsp_texture_accounting.c
+src/bsp_texture_accounting.h
 src/bsp_flat_draw.c
 src/bsp_flat_draw.h
 src/bsp_flat_scene.c
@@ -157,6 +159,7 @@ tests/test_bsp_command_plan.c
 tests/test_bsp_dynamic_lightmap.c
 tests/test_bsp_alpha_test.c
 tests/test_bsp_sky.c
+tests/test_bsp_texture_accounting.c
 tests/test_bsp_flat_draw.c
 tests/test_bsp_flat_scene.c
 tests/test_bsp_noclip.c
@@ -185,6 +188,7 @@ tests/test_validate_texture_path_lightmap_evidence.py
 tests/test_validate_texture_path_mip_evidence.py
 tests/test_validate_texture_path_alpha_evidence.py
 tests/test_validate_texture_path_sky_evidence.py
+tests/test_validate_texture_path_accounting_evidence.py
 tools/audit_publication.py
 tools/build_shader.py
 tools/generate_agc_metadata.py
@@ -201,6 +205,7 @@ tools/validate_texture_path_lightmap_evidence.py
 tools/validate_texture_path_mip_evidence.py
 tools/validate_texture_path_alpha_evidence.py
 tools/validate_texture_path_sky_evidence.py
+tools/validate_texture_path_accounting_evidence.py
 docs/BSP_VIEWER_PHASE1.md
 docs/BSP_RESOURCE_FOUNDATION_PHASE2.md
 docs/BSP_TEXTURE_PATH_PHASE3.md
