@@ -112,7 +112,8 @@ int bsp_resource_frame_build(
     const BspBundleVertex clear_vertices[3],
     const uint16_t clear_indices[3],
     const float camera_position[3], const float camera_forward[3],
-    float aspect_ratio, uint64_t frame_index)
+    float aspect_ratio, uint64_t frame_index,
+    enum ps5_gfx1013_filter base_filter)
 {
     if (!out || !ring || slot_index >= ring->slot_count || !bundle ||
         !bundle->vertices || !bundle->textures || !clear_vertices ||
@@ -167,7 +168,8 @@ int bsp_resource_frame_build(
         bsp_texture_build_tables(
             texture_table.words, texture_dwords, bundle,
             (uintptr_t)bundle->texture_pixels,
-            lightmap_pixels_gpu_address, &written) != 0 ||
+            lightmap_pixels_gpu_address,
+            (enum bsp_texture_filter)base_filter, &written) != 0 ||
         written != texture_dwords)
         return -5;
     out->texture_tables = texture_table.words;

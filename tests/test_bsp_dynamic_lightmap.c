@@ -91,6 +91,12 @@ int main(void)
     assert(bsp_dynamic_lightmap_surrounding_hash(slot.pixels, &layout) ==
            surrounding);
     assert(bsp_dynamic_lightmap_guards_intact(&slot, &layout));
+    assert(bsp_dynamic_lightmap_update_pattern(
+               &slot, &layout, &ring, 0u, 2u, 0u, &update) == 0);
+    assert(update.pattern == 0u && slot.last_frame == 2u &&
+           slot.last_pattern == 0u);
+    assert(bsp_dynamic_lightmap_update_pattern(
+               &slot, &layout, &ring, 0u, 3u, 2u, &update) == -1);
     allocation[0] ^= 1u;
     assert(!bsp_dynamic_lightmap_guards_intact(&slot, &layout));
 

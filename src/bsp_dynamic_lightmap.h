@@ -62,6 +62,10 @@ int bsp_dynamic_lightmap_update(
     BspDynamicLightmapSlot *slot, const BspDynamicLightmapLayout *layout,
     Ps5TransientRing *ring, uint32_t slot_index, uint64_t frame_index,
     BspDynamicLightmapUpdate *update);
+int bsp_dynamic_lightmap_update_pattern(
+    BspDynamicLightmapSlot *slot, const BspDynamicLightmapLayout *layout,
+    Ps5TransientRing *ring, uint32_t slot_index, uint64_t frame_index,
+    uint32_t pattern, BspDynamicLightmapUpdate *update);
 int bsp_dynamic_lightmap_guards_intact(
     const BspDynamicLightmapSlot *slot,
     const BspDynamicLightmapLayout *layout);

@@ -54,7 +54,17 @@ typedef struct BspBundleTexture {
     uint32_t format;
     uint32_t name_hash;
     uint32_t flags;
+    uint32_t mip_count;
+    uint32_t reserved[3];
 } BspBundleTexture;
+
+typedef struct BspBundleMipLevel {
+    uint32_t offset;
+    uint32_t bytes;
+    uint32_t width;
+    uint32_t height;
+    uint32_t row_pitch;
+} BspBundleMipLevel;
 
 typedef struct BspBundleView {
     const void *data;
@@ -78,5 +88,10 @@ typedef struct BspBundleView {
 
 /* Validate the complete file before exposing any GPU-upload span. */
 int bsp_bundle_open(const void *data, size_t bytes, BspBundleView *view);
+
+/* Derive one level of the public AddrLib GFX10 ADDR_SW_LINEAR layout. */
+int bsp_bundle_texture_mip_level(const BspBundleTexture *texture,
+                                 uint32_t level,
+                                 BspBundleMipLevel *out);
 
 #endif

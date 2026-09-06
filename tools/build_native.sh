@@ -35,6 +35,7 @@ bsp_noclip=${BSP_NOCLIP:-0}
 bsp_textured=${BSP_TEXTURED:-0}
 bsp_resource=${BSP_RESOURCE_FOUNDATION:-0}
 bsp_texture_path=${BSP_TEXTURE_PATH:-0}
+bsp_texture_mip_gate=${BSP_TEXTURE_MIP_GATE:-0}
 dev_conf=${PS5LOG_DEV_CONF:-$root/dev.conf}
 bsp_flags=()
 [[ $bsp_noclip == 0 || $bsp_noclip == 1 ]] || {
@@ -48,6 +49,9 @@ bsp_flags=()
 }
 [[ $bsp_texture_path == 0 || $bsp_texture_path == 1 ]] || {
     echo "BSP_TEXTURE_PATH must be 0 or 1" >&2; exit 2;
+}
+[[ $bsp_texture_mip_gate == 0 || $bsp_texture_mip_gate == 1 ]] || {
+    echo "BSP_TEXTURE_MIP_GATE must be 0 or 1" >&2; exit 2;
 }
 if [[ $bsp_noclip == 1 && -z $bsp_bundle ]]; then
     echo "BSP_NOCLIP requires BSP_BUNDLE" >&2
@@ -63,6 +67,10 @@ if [[ $bsp_resource == 1 && $bsp_textured != 1 ]]; then
 fi
 if [[ $bsp_texture_path == 1 && $bsp_resource != 1 ]]; then
     echo "BSP_TEXTURE_PATH requires BSP_RESOURCE_FOUNDATION=1" >&2
+    exit 2
+fi
+if [[ $bsp_texture_mip_gate == 1 && $bsp_texture_path != 1 ]]; then
+    echo "BSP_TEXTURE_MIP_GATE requires BSP_TEXTURE_PATH=1" >&2
     exit 2
 fi
 if [[ -n $bsp_bundle ]]; then
@@ -90,6 +98,9 @@ if [[ -n $bsp_bundle ]]; then
     fi
     if [[ $bsp_texture_path == 1 ]]; then
         bsp_flags+=(-DPS5_TEXTURE_PATH=1)
+    fi
+    if [[ $bsp_texture_mip_gate == 1 ]]; then
+        bsp_flags+=(-DPS5_TEXTURE_MIP_GATE=1)
     fi
 fi
 

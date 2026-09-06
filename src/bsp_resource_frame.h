@@ -3,6 +3,7 @@
 
 #include "bsp_bundle.h"
 #include "bsp_flat_draw.h"
+#include "ps5_gfx1013_descriptor.h"
 #include "ps5_transient_ring.h"
 
 #include <stddef.h>
@@ -45,6 +46,7 @@ int bsp_resource_frame_build(
     const BspBundleVertex clear_vertices[3],
     const uint16_t clear_indices[3],
     const float camera_position[3], const float camera_forward[3],
-    float aspect_ratio, uint64_t frame_index);
+    float aspect_ratio, uint64_t frame_index,
+    enum ps5_gfx1013_filter base_filter);
 
 #endif

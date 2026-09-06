@@ -45,15 +45,37 @@ int main(int argc, char **argv)
                view.lightmap_pixel_count);
     if (view.textures) {
         uint32_t descriptor_dwords = 0u;
+        uint32_t minimum_mips = 15u;
+        uint32_t maximum_mips = 0u;
+        uint64_t chain_bytes = 0u;
         if (bsp_texture_table_required_dwords(&view,
                                                 &descriptor_dwords) != 0) {
             fprintf(stderr, "descriptor sizing failed\n");
             free(data);
             return 1;
         }
-        printf(" textures=%u texture_bytes=%u descriptor_dwords=%u",
+        for (uint32_t index = 0u; index < view.texture_count; ++index) {
+            const BspBundleTexture *const texture = &view.textures[index];
+            BspBundleMipLevel base;
+            if (bsp_bundle_texture_mip_level(texture, 0u, &base) != 0 ||
+                base.offset > texture->bytes ||
+                base.bytes != texture->bytes - base.offset) {
+                fprintf(stderr, "mip layout derivation failed\n");
+                free(data);
+                return 1;
+            }
+            if (texture->mip_count < minimum_mips)
+                minimum_mips = texture->mip_count;
+            if (texture->mip_count > maximum_mips)
+                maximum_mips = texture->mip_count;
+            chain_bytes += texture->bytes;
+        }
+        printf(" textures=%u texture_bytes=%u descriptor_dwords=%u "
+               "mip_layout=addr-sw-linear mip_order=smallest-to-base "
+               "mip_levels=%u..%u mip_chain_bytes=%llu",
                view.texture_count, view.texture_pixel_bytes,
-               descriptor_dwords);
+               descriptor_dwords, minimum_mips, maximum_mips,
+               (unsigned long long)chain_bytes);
         BspDynamicLightmapLayout dynamic;
         if (bsp_dynamic_lightmap_select(&view, &dynamic) != 0) {
             fprintf(stderr, "dynamic lightmap selection failed\n");

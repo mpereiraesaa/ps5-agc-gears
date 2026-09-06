@@ -64,7 +64,7 @@ static void make_bundle(uint8_t data[FILE_BYTES])
 {
     memset(data, 0, FILE_BYTES);
     memcpy(data, "PS5BSP\0\0", 8u);
-    put_u32(data + 8u, 2u);
+    put_u32(data + 8u, 3u);
     put_u32(data + 12u, HEADER);
     put_u32(data + 16u, FILE_BYTES);
     put_f32(data + 24u, 1.0f);
@@ -94,7 +94,7 @@ static void light_checksums(uint8_t *data)
     descriptor(data, 2u, "DRAW", LIGHT_DRAW_OFFSET, 32u, 1u, 32u);
     descriptor(data, 3u, "LMHD", LIGHT_IMAGE_OFFSET, 16u, 1u, 16u);
     descriptor(data, 4u, "LMPX", LIGHT_PIXELS_OFFSET, 256u, 64u, 4u);
-    descriptor(data, 5u, "TEXM", TEXTURE_METADATA_OFFSET, 32u, 1u, 32u);
+    descriptor(data, 5u, "TEXM", TEXTURE_METADATA_OFFSET, 48u, 1u, 48u);
     descriptor(data, 6u, "TEXP", TEXTURE_PIXELS_OFFSET, 256u, 256u, 1u);
     put_u32(data + 20u, crc32_bytes(data + LIGHT_HEADER,
                                     LIGHT_FILE_BYTES - LIGHT_HEADER));
@@ -104,7 +104,7 @@ static void make_light_bundle(uint8_t data[LIGHT_FILE_BYTES])
 {
     memset(data, 0, LIGHT_FILE_BYTES);
     memcpy(data, "PS5BSP\0\0", 8u);
-    put_u32(data + 8u, 2u);
+    put_u32(data + 8u, 3u);
     put_u32(data + 12u, LIGHT_HEADER);
     put_u32(data + 16u, LIGHT_FILE_BYTES);
     put_f32(data + 36u, 0.0f);
@@ -135,18 +135,33 @@ static void make_light_bundle(uint8_t data[LIGHT_FILE_BYTES])
         (BspBundleTexture *)(data + TEXTURE_METADATA_OFFSET);
     texture->offset = 0u;
     texture->bytes = 256u;
-    texture->width = 17u;
+    texture->width = 1u;
     texture->height = 1u;
     texture->row_pitch = 256u;
     texture->format = BSP_BUNDLE_IMAGE_RGBA8_UNORM;
     texture->name_hash = UINT32_C(0x12345678);
     texture->flags = BSP_BUNDLE_TEXTURE_TRANSPARENT;
+    texture->mip_count = 1u;
     memset(data + TEXTURE_PIXELS_OFFSET, 0xaa, 256u);
     light_checksums(data);
 }
 
 int main(void)
 {
+    const BspBundleTexture mip_texture = {
+        .bytes = 32512u, .width = 64u, .height = 64u,
+        .row_pitch = 256u, .format = BSP_BUNDLE_IMAGE_RGBA8_UNORM,
+        .name_hash = 1u, .mip_count = 7u,
+    };
+    BspBundleMipLevel derived;
+    assert(bsp_bundle_texture_mip_level(&mip_texture, 6u, &derived) == 0);
+    assert(derived.offset == 0u && derived.bytes == 256u &&
+           derived.width == 1u && derived.height == 1u);
+    assert(bsp_bundle_texture_mip_level(&mip_texture, 0u, &derived) == 0);
+    assert(derived.offset == 16128u && derived.bytes == 16384u &&
+           derived.width == 64u && derived.height == 64u);
+    assert(bsp_bundle_texture_mip_level(&mip_texture, 7u, &derived) != 0);
+
     union { uint64_t align; uint8_t bytes[FILE_BYTES]; } storage;
     make_bundle(storage.bytes);
     BspBundleView view;
@@ -187,7 +202,11 @@ int main(void)
            view.lightmap_image->width == 64u &&
            view.lightmap_pixel_count == 64u && view.textures &&
            view.texture_count == 1u && view.texture_pixel_bytes == 256u &&
-           view.textures[0].width == 17u);
+           view.textures[0].width == 1u);
+    BspBundleMipLevel mip;
+    assert(bsp_bundle_texture_mip_level(&view.textures[0], 0u, &mip) == 0);
+    assert(mip.offset == 0u && mip.bytes == 256u && mip.width == 1u &&
+           mip.height == 1u && mip.row_pitch == 256u);
     BspBundleTexture *const texture =
         (BspBundleTexture *)(light.bytes + TEXTURE_METADATA_OFFSET);
     texture->flags = BSP_BUNDLE_TEXTURE_NODRAW;
@@ -202,6 +221,11 @@ int main(void)
     assert(bsp_bundle_open(light.bytes, sizeof(light.bytes), &view) ==
            BSP_BUNDLE_GEOMETRY_INVALID);
     image->row_pitch = 256u;
+    texture->reserved[0] = 1u;
+    light_checksums(light.bytes);
+    assert(bsp_bundle_open(light.bytes, sizeof(light.bytes), &view) ==
+           BSP_BUNDLE_GEOMETRY_INVALID);
+    texture->reserved[0] = 0u;
     texture->offset = 1u;
     light_checksums(light.bytes);
     assert(bsp_bundle_open(light.bytes, sizeof(light.bytes), &view) ==

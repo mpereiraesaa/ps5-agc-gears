@@ -62,16 +62,64 @@ The run reused the existing registered Chiaki console entry and the previously
 validated input path; it did not pair Chiaki or require another DualSense
 movement gate.
 
+## Gate 2: deterministic mip chains and sampler variants
+
+The second gate is complete on FW 12.02. Bundle ABI version 3 stores a complete
+RGBA8 mip chain for every base texture. The baker derives every level from the
+decoded level-zero image with an integer 2x2 box filter and round-to-nearest,
+stopping at 1x1. It follows Mesa AddrLib's GFX10 linear layout: levels are
+packed from smallest to base, each row is padded to 256 bytes, and the image
+base remains 256-byte aligned. The C consumer recomputes and validates every
+level's dimensions, pitch, offset and aggregate span before exposing it.
+
+The GFX10.3 T# builder now emits `BASE_LEVEL`, `LAST_LEVEL` and `MAX_MIP` from
+the validated chain. Separate S# variants encode trilinear filtering and 4:1
+anisotropic filtering; exact DWORDs and invalid combinations are host-tested
+against Mesa and PAL's public register definitions. The hardware gate uses
+trilinear on even frames and anisotropic 4:1 on odd frames. Its final two
+frames deliberately share the same dynamic-lightmap pattern, so their distinct
+GPU framebuffer hashes isolate the sampler change rather than the lightmap.
+
+Acceptance requires all of the following:
+
+- deterministic ABI-v3 output across two independent private-map bakes;
+- 164 validated chains, 5–9 levels, 7,842,816 bytes and smallest-to-base order;
+- exact sampled S# words for frames 0, 1, 9,998 and 9,999;
+- identical final lightmap-slot hashes with paired pattern 1, but distinct
+  trilinear and anisotropic GPU framebuffer readbacks;
+- exact fence plus VideoOut-token retirement, intact guards, 10,000 completed
+  and connected frames, zero errors and six reclaimed allocations;
+- a gap-free `bsp-texture-path-mip-soak-complete` BYE.
+
+`validate_texture_path_mip_evidence.py` accepted run
+`20260906T153443296Z_PPSA99997_ps5-agc-gears_0x67412ae3fe5e`: 10,000 frames,
+224 structured records, trilinear/anisotropic framebuffer hashes
+`53961843c05e93bf` / `404a458403011f6d`, 76,383,232 resident bytes and
+173,632,448 uploaded bytes. The transcript and manifest SHA-256 values are
+`6d06e1fbd22cb2ad91e0f2e4904ae752675f281dc8387f97da4f1d772ba965db`
+and
+`8daa88b924288d72b454274e37c0efe569157870826f20ab2c718a0b40456044`.
+The private bundle is 10,121,728 bytes with SHA-256
+`05a2f8ecc0b21df1e0ad3f5a159f7f20ae847c8ef252245959561c42f6e3fe52`.
+The native ELF/fSELF SHA-256 values are
+`bec19b3e50f762e86713cf386238d697e52389a371cc69418a66e7c78ed7b50f`
+and
+`7adfb55bfb287867f9d5d419262b9d1144330360867ab20d571b46344f0ea7ff`.
+
+The private Remote Play capture SHA-256 is
+`e15f89725691d8fcc02e0482f75d5b1d596b7b6e7c603865c7d832499d35125b`.
+It was taken from the already-open registered Chiaki session after the soak;
+no launch, pairing or controller movement gate was repeated. The exact title
+was then closed and all four console services passed two health checks.
+
 ## Remaining ordered gates
 
-Gate 1 does not claim completion of Phase 3. The remaining order is:
+Gates 1 and 2 do not claim completion of Phase 3. The remaining order is:
 
-1. deterministic bundle mip chains plus mip-aware T# descriptors and separate
-   trilinear/anisotropic S# variants;
-2. an alpha-test pipeline permutation for `{` textures;
-3. a separate sky pass;
-4. consolidated resident/upload telemetry and reproducible host/hardware gates;
-5. the final 60,000-frame structured soak and pull request.
+1. an alpha-test pipeline permutation for `{` textures;
+2. a separate sky pass;
+3. consolidated resident/upload telemetry and reproducible host/hardware gates;
+4. the final 60,000-frame structured soak and pull request.
 
 Entities, PVS, water, sprites/models, platform/audio and engine integration
 remain outside this phase.

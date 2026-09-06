@@ -12,18 +12,20 @@ static int valid_address(uint64_t address)
 int bsp_gfx1013_combined_descriptor(
     uint32_t out[BSP_GFX1013_COMBINED_DWORDS], uint64_t gpu_address,
     uint32_t width, uint32_t height, uint32_t row_pitch,
+    uint32_t mip_count,
     enum bsp_texture_address_mode address_mode,
     enum bsp_texture_filter filter)
 {
     if (!out)
         return -1;
     memset(out, 0, BSP_GFX1013_COMBINED_DWORDS * sizeof(*out));
-    return ps5_gfx1013_build_tsharp_rgba8(out, gpu_address, width, height,
-                                          row_pitch) == 0 &&
-                   ps5_gfx1013_build_ssharp(
+    return ps5_gfx1013_build_tsharp_rgba8_mip(
+                   out, gpu_address, width, height, row_pitch,
+                   mip_count) == 0 &&
+                   ps5_gfx1013_build_ssharp_mip(
                        out + BSP_GFX1013_IMAGE_DWORDS,
                        (enum ps5_gfx1013_address_mode)address_mode,
-                       (enum ps5_gfx1013_filter)filter) == 0
+                       (enum ps5_gfx1013_filter)filter, mip_count) == 0
                ? 0
                : -1;
 }
@@ -43,6 +45,7 @@ int bsp_texture_build_tables(uint32_t *out, uint32_t capacity_dwords,
                              const BspBundleView *bundle,
                              uint64_t texture_pixels_gpu_address,
                              uint64_t lightmap_pixels_gpu_address,
+                             enum bsp_texture_filter base_filter,
                              uint32_t *written_dwords)
 {
     uint32_t required = 0u;
@@ -50,6 +53,9 @@ int bsp_texture_build_tables(uint32_t *out, uint32_t capacity_dwords,
         bundle->texture_pixel_bytes == 0u ||
         !bundle->lightmap_image || !bundle->lightmap_pixels ||
         bsp_texture_table_required_dwords(bundle, &required) != 0)
+        return -1;
+    if (base_filter != BSP_TEXTURE_FILTER_TRILINEAR &&
+        base_filter != BSP_TEXTURE_FILTER_ANISOTROPIC_4X)
         return -1;
     *written_dwords = 0u;
     if (capacity_dwords < required)
@@ -71,13 +77,16 @@ int bsp_texture_build_tables(uint32_t *out, uint32_t capacity_dwords,
         return -4;
     for (uint32_t index = 0; index < bundle->texture_count; ++index) {
         const BspBundleTexture *const texture = &bundle->textures[index];
+        BspBundleMipLevel base_level;
         if (texture->format != BSP_BUNDLE_IMAGE_RGBA8_UNORM ||
             texture->width == 0u || texture->height == 0u ||
             texture->width > 16384u || texture->height > 16384u ||
-            texture->row_pitch < texture->width * 4u ||
-            (texture->row_pitch & 255u) != 0u ||
-            texture->height > UINT32_MAX / texture->row_pitch ||
-            texture->bytes != texture->height * texture->row_pitch ||
+            texture->row_pitch !=
+                ((texture->width * 4u + 255u) & ~UINT32_C(255)) ||
+            texture->mip_count < 2u || texture->mip_count > 15u ||
+            bsp_bundle_texture_mip_level(texture, 0u, &base_level) != 0 ||
+            base_level.offset > UINT32_MAX - base_level.bytes ||
+            texture->bytes != base_level.offset + base_level.bytes ||
             (texture->offset & 255u) != 0u ||
             texture->offset > bundle->texture_pixel_bytes ||
             texture->bytes > bundle->texture_pixel_bytes - texture->offset ||
@@ -93,12 +102,12 @@ int bsp_texture_build_tables(uint32_t *out, uint32_t capacity_dwords,
         if (bsp_gfx1013_combined_descriptor(
                 table, texture_pixels_gpu_address + texture->offset,
                 texture->width, texture->height, texture->row_pitch,
-                BSP_TEXTURE_REPEAT, BSP_TEXTURE_FILTER_BILINEAR) != 0 ||
+                texture->mip_count, BSP_TEXTURE_REPEAT, base_filter) != 0 ||
             bsp_gfx1013_combined_descriptor(
                 table + BSP_GFX1013_COMBINED_DWORDS,
                 lightmap_pixels_gpu_address, bundle->lightmap_image->width,
                 bundle->lightmap_image->height,
-                bundle->lightmap_image->row_pitch,
+                bundle->lightmap_image->row_pitch, 1u,
                 BSP_TEXTURE_CLAMP_LAST_TEXEL,
                 BSP_TEXTURE_FILTER_BILINEAR) != 0)
             return -5;

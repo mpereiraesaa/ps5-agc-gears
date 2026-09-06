@@ -162,6 +162,26 @@ def main() -> None:
     if "bsp-texture-path-native-release" not in makefile or \
             "BSP_TEXTURE_PATH=1" not in makefile:
         raise SystemExit("texture-path release target missing")
+    for item in (
+        "BSP_TEXTURE_MIP_GATE requires BSP_TEXTURE_PATH=1",
+        "-DPS5_TEXTURE_MIP_GATE=1",
+    ):
+        if item not in builder:
+            raise SystemExit(f"mip gate native build contract missing: {item}")
+    for item in (
+        "BSP_TEXTURE_PATH_BOOT schema=1 slice=mip-sampler",
+        "MIP_CHAINS_READY textures=%u layout=addr-sw-linear",
+        "MIP_SAMPLER_FRAME frame=%llu slot=%u filter=%s",
+        "BSP_LOOP_BEGIN mode=texture-path-mip-soak",
+        "MIP_SAMPLER_READBACK trilinear_buffer=%016llx",
+        "BSP_TEXTURE_PATH_MIP_COMPLETE frames=%llu textures=%u",
+        'ps5log_close("bsp-texture-path-mip-soak-complete")',
+    ):
+        if item not in source:
+            raise SystemExit(f"mip gate runtime contract missing: {item}")
+    if "bsp-texture-mip-native-release" not in makefile or \
+            "BSP_TEXTURE_MIP_GATE=1" not in makefile:
+        raise SystemExit("mip gate release target missing")
     for item in ('bsp_resource.gs.bin', 'bsp_resource.ps.bin',
                  'bsp_overlay.gs.bin', 'bsp_overlay.ps.bin'):
         if item not in assets:

@@ -86,8 +86,9 @@
 - [x] Pass the Phase 3 bounded dynamic-lightmap 10,000-frame gate with
   alternating GPU-visible readbacks, stable surrounding bytes, intact guards,
   exact slot retirement and six reclaimed allocations.
-- [ ] Add deterministic mip chains and mip-aware trilinear/anisotropic
-  descriptors, then pass their host and hardware gates.
+- [x] Add deterministic mip chains and mip-aware trilinear/anisotropic
+  descriptors; pass their host contracts and paired-lightmap 10,000-frame FW
+  12.02 hardware gate with distinct sampler readbacks.
 - [ ] Add the `{` alpha-test permutation and separate sky pass.
 - [ ] Pass and archive the complete Phase 3 60,000-frame hardware gate.
 - [x] Require pull requests on `main`; require the host CI check after this PR

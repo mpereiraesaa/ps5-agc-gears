@@ -325,8 +325,19 @@ int bsp_dynamic_lightmap_update(
     Ps5TransientRing *ring, uint32_t slot_index, uint64_t frame_index,
     BspDynamicLightmapUpdate *update)
 {
+    return bsp_dynamic_lightmap_update_pattern(
+        slot, layout, ring, slot_index, frame_index,
+        (uint32_t)(frame_index & 1u), update);
+}
+
+int bsp_dynamic_lightmap_update_pattern(
+    BspDynamicLightmapSlot *slot, const BspDynamicLightmapLayout *layout,
+    Ps5TransientRing *ring, uint32_t slot_index, uint64_t frame_index,
+    uint32_t pattern, BspDynamicLightmapUpdate *update)
+{
     if (!slot || !slot->initialized || !layout_valid(layout) || !ring ||
-        !update || slot_index >= ring->slot_count ||
+        !update || pattern >= BSP_DYNAMIC_LIGHTMAP_PATTERN_COUNT ||
+        slot_index >= ring->slot_count ||
         ring->slots[slot_index].state != PS5_TRANSIENT_OPEN ||
         !bsp_dynamic_lightmap_guards_intact(slot, layout))
         return -1;
@@ -334,7 +345,6 @@ int bsp_dynamic_lightmap_update(
     if (ps5_transient_ring_allocate(ring, slot_index, layout->patch_bytes,
                                     256u, &staging) != PS5_TRANSIENT_OK)
         return -2;
-    const uint32_t pattern = (uint32_t)(frame_index & 1u);
     const uint8_t value = pattern == 0u ? 255u : 24u;
     uint8_t *const packed = staging.cpu;
     for (size_t pixel = 0u; pixel < layout->patch_bytes; pixel += 4u) {

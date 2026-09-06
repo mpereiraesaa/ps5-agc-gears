@@ -5,6 +5,40 @@ They are not compatibility claims for other firmware or consoles. Run logs and
 captures live in the private parent laboratory; this public boundary records
 only sanitized identifiers, hashes, outcomes and known limitations.
 
+## Phase 3 mip/sampler gate
+
+The second ordered Phase 3 gate passed 10,000 frames on FW 12.02:
+
+- Run: `20260906T153443296Z_PPSA99997_ps5-agc-gears_0x67412ae3fe5e`
+- Native ELF SHA-256:
+  `bec19b3e50f762e86713cf386238d697e52389a371cc69418a66e7c78ed7b50f`
+- Signed fSELF SHA-256:
+  `7adfb55bfb287867f9d5d419262b9d1144330360867ab20d571b46344f0ea7ff`
+- Private bundle SHA-256/bytes:
+  `05a2f8ecc0b21df1e0ad3f5a159f7f20ae847c8ef252245959561c42f6e3fe52` /
+  10,121,728
+- Transcript/manifest SHA-256:
+  `6d06e1fbd22cb2ad91e0f2e4904ae752675f281dc8387f97da4f1d772ba965db` /
+  `8daa88b924288d72b454274e37c0efe569157870826f20ab2c718a0b40456044`
+- Requested/completed/connected: 10,000/10,000/10,000
+- Texture chains/levels/bytes: 164 / 5–9 / 7,842,816
+- Layout/filter pair: smallest-to-base linear / trilinear and anisotropic 4:1
+- Paired final lightmap slots: equal, pattern 1
+- Final trilinear/anisotropic GPU readbacks:
+  `53961843c05e93bf` / `404a458403011f6d` (distinct)
+- Resident/total uploaded bytes: 76,383,232 / 173,632,448
+- Fence and VideoOut tokens: exact; guards intact; renderer errors: 0
+- Teardown: gap-free BYE at sequence 224, six allocations reclaimed,
+  exact-title closure and two healthy four-service checks
+
+The strict validator accepted the immutable manifest and exact private bundle
+identity. A capture from the already-running registered Chiaki session shows a
+correct textured corridor; its SHA-256 is
+`e15f89725691d8fcc02e0482f75d5b1d596b7b6e7c603865c7d832499d35125b`.
+The capture remained private and neither Chiaki nor the DualSense input gate was
+restarted. This gate proves deterministic mips and the two sampler variants,
+not the pending alpha-test, sky or final 60,000-frame gates.
+
 ## Phase 3 dynamic-lightmap gate
 
 The first ordered Phase 3 gate passed 10,000 frames on FW 12.02:

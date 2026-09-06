@@ -49,6 +49,15 @@ requires deterministic A/B patch hashes, distinct final GPU buffer hashes,
 stable bytes outside the patch, intact guards and six-allocation exact-token
 reclamation.
 
+The mip/sampler gate adds `MIP_CHAINS_READY`, four `MIP_SAMPLER_FRAME`
+samples, `MIP_SAMPLER_READBACK` and `BSP_TEXTURE_PATH_MIP_COMPLETE`. The chain
+record fixes layout order, pitch alignment, level range and aggregate bytes.
+The frame samples expose the exact four S# DWORDs. Final trilinear and
+anisotropic frames must use the same lightmap pattern and produce different
+GPU-visible framebuffer hashes; both dynamic-lightmap slot hashes must remain
+equal. The accepted run must also retain every Gate 1 ownership, guard, upload
+and exact-token invariant.
+
 ## Continuous-runtime closure
 
 The production runtime uses one persistent frame state machine and emits a
