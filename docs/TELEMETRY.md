@@ -40,6 +40,15 @@ No submit return value, silence, elapsed timeout or clean TCP close substitutes
 for these ownership observations. If telemetry becomes incomplete after submit,
 the process parks and retains resources.
 
+The Phase 3 dynamic-lightmap gate additionally emits
+`DYNAMIC_LIGHTMAP_READY`, four `DYNAMIC_LIGHTMAP_FRAME` samples,
+`DYNAMIC_LIGHTMAP_READBACK` and `BSP_TEXTURE_PATH_LIGHTMAP_COMPLETE`. The
+samples separate resident bytes, transient bytes, actual lightmap upload bytes,
+the wider aligned acquire span and the cumulative upload total. Acceptance
+requires deterministic A/B patch hashes, distinct final GPU buffer hashes,
+stable bytes outside the patch, intact guards and six-allocation exact-token
+reclamation.
+
 ## Continuous-runtime closure
 
 The production runtime uses one persistent frame state machine and emits a

@@ -44,6 +44,8 @@ src/bsp_bundle.c
 src/bsp_bundle.h
 src/bsp_command_plan.c
 src/bsp_command_plan.h
+src/bsp_dynamic_lightmap.c
+src/bsp_dynamic_lightmap.h
 src/bsp_flat_draw.c
 src/bsp_flat_draw.h
 src/bsp_flat_scene.c
@@ -146,6 +148,7 @@ tests/test_ps5_agc_submit.c
 tests/test_ps5_videoout.c
 tests/test_bsp_bundle.c
 tests/test_bsp_command_plan.c
+tests/test_bsp_dynamic_lightmap.c
 tests/test_bsp_flat_draw.c
 tests/test_bsp_flat_scene.c
 tests/test_bsp_noclip.c
@@ -170,6 +173,7 @@ tests/test_native_contract.py
 tests/test_validate_bsp_noclip_evidence.py
 tests/test_validate_bsp_textured_evidence.py
 tests/test_validate_bsp_resource_evidence.py
+tests/test_validate_texture_path_lightmap_evidence.py
 tools/audit_publication.py
 tools/build_shader.py
 tools/generate_agc_metadata.py
@@ -182,5 +186,7 @@ tools/inspect_bsp_bundle.c
 tools/validate_bsp_noclip_evidence.py
 tools/validate_bsp_textured_evidence.py
 tools/validate_bsp_resource_evidence.py
+tools/validate_texture_path_lightmap_evidence.py
 docs/BSP_VIEWER_PHASE1.md
 docs/BSP_RESOURCE_FOUNDATION_PHASE2.md
+docs/BSP_TEXTURE_PATH_PHASE3.md

@@ -127,6 +127,12 @@ def main() -> None:
         if item not in builder:
             raise SystemExit(f"resource-foundation native build contract missing: {item}")
     for item in (
+        "BSP_TEXTURE_PATH requires BSP_RESOURCE_FOUNDATION=1",
+        "-DPS5_TEXTURE_PATH=1", "src/bsp_dynamic_lightmap.c",
+    ):
+        if item not in builder:
+            raise SystemExit(f"texture-path native build contract missing: {item}")
+    for item in (
         "BSP_RESOURCE_BOOT schema=1 target=gfx1013",
         "RESOURCE_HEAP_READY bytes=%llu allocations=4",
         "overlay_depth=disabled",
@@ -141,6 +147,21 @@ def main() -> None:
     ):
         if item not in source:
             raise SystemExit(f"resource-foundation runtime contract missing: {item}")
+    for item in (
+        "BSP_TEXTURE_PATH_BOOT schema=1 slice=dynamic-lightmap",
+        "BSP_GATE_FRAME_COUNT = 10000u",
+        "DYNAMIC_LIGHTMAP_READY image=%ux%u image_bytes=%llu",
+        "DYNAMIC_LIGHTMAP_FRAME frame=%llu slot=%u pattern=%u",
+        "BSP_LOOP_BEGIN mode=texture-path-lightmap-soak",
+        "DYNAMIC_LIGHTMAP_READBACK pattern0=%016llx pattern1=%016llx",
+        "BSP_TEXTURE_PATH_LIGHTMAP_COMPLETE frames=%llu",
+        'ps5log_close("bsp-texture-path-lightmap-soak-complete")',
+    ):
+        if item not in source:
+            raise SystemExit(f"texture-path runtime contract missing: {item}")
+    if "bsp-texture-path-native-release" not in makefile or \
+            "BSP_TEXTURE_PATH=1" not in makefile:
+        raise SystemExit("texture-path release target missing")
     for item in ('bsp_resource.gs.bin', 'bsp_resource.ps.bin',
                  'bsp_overlay.gs.bin', 'bsp_overlay.ps.bin'):
         if item not in assets:

@@ -1,4 +1,5 @@
 #include "bsp_bundle.h"
+#include "bsp_dynamic_lightmap.h"
 #include "bsp_texture_descriptor.h"
 
 #include <stdio.h>
@@ -53,6 +54,17 @@ int main(int argc, char **argv)
         printf(" textures=%u texture_bytes=%u descriptor_dwords=%u",
                view.texture_count, view.texture_pixel_bytes,
                descriptor_dwords);
+        BspDynamicLightmapLayout dynamic;
+        if (bsp_dynamic_lightmap_select(&view, &dynamic) != 0) {
+            fprintf(stderr, "dynamic lightmap selection failed\n");
+            free(data);
+            return 1;
+        }
+        printf(" dynamic_patch=%u,%u+%ux%u hit_face=%u patch_bytes=%zu "
+               "dirty_span_bytes=%zu",
+               dynamic.patch_x, dynamic.patch_y, dynamic.patch_width,
+               dynamic.patch_height, dynamic.hit_face, dynamic.patch_bytes,
+               dynamic.dirty_span_bytes);
     }
     putchar('\n');
     free(data);

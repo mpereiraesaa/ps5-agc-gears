@@ -5,6 +5,37 @@ They are not compatibility claims for other firmware or consoles. Run logs and
 captures live in the private parent laboratory; this public boundary records
 only sanitized identifiers, hashes, outcomes and known limitations.
 
+## Phase 3 dynamic-lightmap gate
+
+The first ordered Phase 3 gate passed 10,000 frames on FW 12.02:
+
+- Run: `20260906T150442704Z_PPSA99997_ps5-agc-gears_0x659df0b5b957`
+- Native ELF SHA-256:
+  `a922c3d2fbb028cec80e27f17b9634d1e2317987eac507bf2f2e6b232a6133c6`
+- Signed fSELF SHA-256:
+  `b7b52e38580e3a22612c279632ad92c2b638c8004894c5df10490e5d183968aa`
+- Transcript/manifest SHA-256:
+  `e163c166e3ca5a733570c803b75decdbb4251b608907aff8b8a5126ae27b5ac9` /
+  `db345dc5ff7be97a22d8975639f6b4f97b3b0535f20fb0d75f4a86150d60c9d5`
+- Requested/completed/connected: 10,000/10,000/10,000
+- Dynamic patch: 8x8 texels, 256 bytes per bounded update
+- A/B patch hashes: `2590af3457808025` / `89d8b73bb162b925`
+- Final GPU framebuffer hashes: `7d766580357827ce` / `e3691c96c36c021c`
+- Resident/total uploaded bytes: 64,259,072 / 173,632,448
+- Image slots/pool allocations reclaimed: 2/6
+- Outside-patch bytes and all guards: stable/intact
+- Pad reads, presentation-budget and renderer errors: 0/0/0
+- Teardown: gap-free BYE at sequence 217, exact-title closure and four healthy
+  payload services
+
+The fail-closed validator accepted the immutable manifest against the exact
+private bundle identity. A Remote Play screenshot confirms the map remains
+visually correct; its SHA-256 is
+`32cb65a640e6c319f979aab842916bb1274da1cf6a66126bfe12b842b46a33a6`.
+See `BSP_TEXTURE_PATH_PHASE3.md` for the ownership and cache contract. This
+gate proves only the first ordered Phase 3 slice, not the later mip, alpha-test,
+sky or final 60,000-frame gates.
+
 ## Phase 2 resource-foundation status
 
 Phase 2 passed its complete 60,000-frame FW 12.02 hardware gate:

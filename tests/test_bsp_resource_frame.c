@@ -43,7 +43,8 @@ int main(void)
     BspResourceFrame frame;
     assert(bsp_resource_frame_build(
                &frame, &ring, 0u, mapping, sizeof(mapping), &bundle,
-               clear_vertices, clear_indices, position, forward,
+               (uintptr_t)lightmap_pixels, clear_vertices, clear_indices,
+               position, forward,
                16.0f / 9.0f, 17u) == 0);
     assert(frame.map_constant_table && frame.clear_constant_table);
     assert(frame.map_vertex_table && frame.clear_vertex_table);
@@ -68,5 +69,10 @@ int main(void)
     assert(memcmp(frame.overlay_indices, expected_overlay_indices,
                   sizeof(expected_overlay_indices)) == 0);
     assert(ps5_transient_ring_seal(&ring, 0u, 77u) == 0);
+    assert(ps5_transient_ring_begin(&ring, 1u, 0u, 0) == 0);
+    assert(bsp_resource_frame_build(
+               &frame, &ring, 1u, mapping, sizeof(mapping), &bundle,
+               UINT64_C(0x0000123500000000), clear_vertices,
+               clear_indices, position, forward, 16.0f / 9.0f, 18u) == -5);
     return 0;
 }

@@ -14,6 +14,7 @@
 #include "../src/bsp_textured_draw.h"
 #include "../src/bsp_resource_draw.h"
 #include "../src/bsp_resource_frame.h"
+#include "../src/bsp_dynamic_lightmap.h"
 #include "../src/ps5_agc_submit.h"
 #include "../src/ps5_cache_contract.h"
 #include "../src/ps5_color_target.h"
@@ -110,7 +111,11 @@ enum {
     GUARD_WORD = 0x51a6c3d9u,
     BSP_FIXED_COMMAND_DWORDS = 4096u,
     BSP_MAX_BUNDLE_BYTES = 64u * 1024u * 1024u,
-#ifdef PS5_BSP_TEXTURED
+#ifdef PS5_TEXTURE_PATH
+    BSP_GATE_FRAME_COUNT = 10000u,
+    BSP_NOCLIP_MIN_MOVING_FRAMES = 600u,
+    BSP_NOCLIP_MIN_LOOKING_FRAMES = 120u,
+#elif defined(PS5_BSP_TEXTURED)
     BSP_GATE_FRAME_COUNT = 60000u,
     BSP_NOCLIP_MIN_MOVING_FRAMES = 600u,
     BSP_NOCLIP_MIN_LOOKING_FRAMES = 120u,
@@ -145,6 +150,10 @@ struct native_resources {
     Ps5ResourceAllocation shader_allocation;
     Ps5ResourceAllocation depth_allocation;
     Ps5ResourceAllocation transient_allocation;
+#ifdef PS5_TEXTURE_PATH
+    void *dynamic_lightmaps[2];
+    Ps5ResourceAllocation dynamic_lightmap_allocations[2];
+#endif
 #endif
     size_t command_bytes;
     size_t bsp_bytes;
@@ -180,6 +189,14 @@ struct native_renderer {
     Ps5TransientRing transient_ring;
     BspResourceFrame resource_frames[2];
     Ps5CpuToGpuPlan cache_plans[2];
+#ifdef PS5_TEXTURE_PATH
+    BspDynamicLightmapLayout dynamic_lightmap_layout;
+    BspDynamicLightmapSlot dynamic_lightmap_slots[2];
+    BspDynamicLightmapUpdate dynamic_lightmap_updates[2];
+    Ps5CpuToGpuPlan dynamic_lightmap_cache_plans[2];
+    uint64_t resident_bytes;
+    uint64_t uploaded_bytes;
+#endif
     uint64_t completed_tokens[2];
     uint64_t last_completed_token;
     uint64_t overlay_draw_modifier;
@@ -283,8 +300,11 @@ static int add_aligned(size_t *total, size_t bytes, size_t alignment)
     return 0;
 }
 
-static int init_resource_heap(size_t bsp_bytes)
+static int init_resource_heap(size_t bsp_bytes, size_t source_file_bytes)
 {
+#ifndef PS5_TEXTURE_PATH
+    (void)source_file_bytes;
+#endif
     size_t heap_bytes = 0u;
     if (add_aligned(&heap_bytes, bsp_bytes,
                     BSP_RUNTIME_ALLOCATION_ALIGNMENT) != 0 ||
@@ -293,6 +313,22 @@ static int init_resource_heap(size_t bsp_bytes)
                     DEPTH_ALIGNMENT) != 0 ||
         add_aligned(&heap_bytes, RESOURCE_TRANSIENT_BYTES,
                     RESOURCE_HEAP_ALIGNMENT) != 0 ||
+#ifdef PS5_TEXTURE_PATH
+        add_aligned(
+            &heap_bytes,
+            (source_file_bytes < 2048u * 2048u * 4u
+                 ? source_file_bytes
+                 : 2048u * 2048u * 4u) +
+                2u * BSP_DYNAMIC_LIGHTMAP_GUARD_BYTES,
+            RESOURCE_HEAP_ALIGNMENT) != 0 ||
+        add_aligned(
+            &heap_bytes,
+            (source_file_bytes < 2048u * 2048u * 4u
+                 ? source_file_bytes
+                 : 2048u * 2048u * 4u) +
+                2u * BSP_DYNAMIC_LIGHTMAP_GUARD_BYTES,
+            RESOURCE_HEAP_ALIGNMENT) != 0 ||
+#endif
         add_aligned(&heap_bytes, 64u, RESOURCE_HEAP_ALIGNMENT) != 0)
         return -1;
     heap_bytes = (heap_bytes + RESOURCE_HEAP_ALIGNMENT - 1u) &
@@ -340,6 +376,46 @@ static int init_resource_heap(size_t bsp_bytes)
     resources.bsp_bytes = bsp_bytes;
     return 0;
 }
+
+#ifdef PS5_TEXTURE_PATH
+static int init_dynamic_lightmaps(void)
+{
+    if (bsp_dynamic_lightmap_select(
+            &renderer.bsp_bundle,
+            &renderer.dynamic_lightmap_layout) != 0)
+        return -1;
+    size_t allocation_bytes = 0u;
+    if (bsp_dynamic_lightmap_allocation_bytes(
+            &renderer.dynamic_lightmap_layout, &allocation_bytes) != 0)
+        return -1;
+    for (uint32_t slot = 0u; slot < 2u; ++slot) {
+        if (ps5_resource_pool_allocate(
+                &resources.resource_pool, allocation_bytes,
+                RESOURCE_HEAP_ALIGNMENT,
+                &resources.dynamic_lightmap_allocations[slot]) !=
+                PS5_RESOURCE_POOL_OK)
+            return -2;
+        resources.dynamic_lightmaps[slot] = ps5_resource_pool_pointer(
+            &resources.resource_pool,
+            &resources.dynamic_lightmap_allocations[slot]);
+        if (!resources.dynamic_lightmaps[slot] ||
+            bsp_dynamic_lightmap_slot_init(
+                &renderer.dynamic_lightmap_slots[slot],
+                resources.dynamic_lightmaps[slot], allocation_bytes,
+                renderer.bsp_bundle.lightmap_pixels,
+                renderer.dynamic_lightmap_layout.image_bytes,
+                &renderer.dynamic_lightmap_layout) != 0)
+            return -3;
+    }
+    renderer.resident_bytes =
+        resources.bsp_allocation.bytes + resources.shader_allocation.bytes +
+        resources.depth_allocation.bytes +
+        resources.transient_allocation.bytes +
+        resources.dynamic_lightmap_allocations[0].bytes +
+        resources.dynamic_lightmap_allocations[1].bytes;
+    return 0;
+}
+#endif
 #endif
 
 #ifdef PS5_BSP_VIEWER
@@ -387,7 +463,7 @@ static int load_bsp_bundle(void)
     }
     int result;
 #ifdef PS5_RESOURCE_FOUNDATION
-    result = init_resource_heap(upper.allocation_bytes);
+    result = init_resource_heap(upper.allocation_bytes, file_bytes);
 #else
     result = allocate_direct(&resources.bsp, &resources.bsp_offset,
                              upper.allocation_bytes,
@@ -420,6 +496,10 @@ static int load_bsp_bundle(void)
     if (result != 0 ||
         renderer.bsp_plan.allocation_bytes > resources.bsp_bytes)
         return -5;
+#ifdef PS5_TEXTURE_PATH
+    if (init_dynamic_lightmaps() != 0)
+        return -6;
+#endif
     return 0;
 }
 
@@ -597,12 +677,26 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
             &state->transient_ring, resource_slot, completed,
             completed != 0u) != PS5_TRANSIENT_OK)
         return -8;
+#ifdef PS5_TEXTURE_PATH
+    if (bsp_dynamic_lightmap_update(
+            &state->dynamic_lightmap_slots[resource_slot],
+            &state->dynamic_lightmap_layout, &state->transient_ring,
+            resource_slot, frame->frame_index,
+            &state->dynamic_lightmap_updates[resource_slot]) != 0)
+        return resource_compose_fail(state, resource_slot, -9);
+    const uint64_t lightmap_gpu_address = (uintptr_t)
+        state->dynamic_lightmap_slots[resource_slot].pixels;
+#else
+    const uint64_t lightmap_gpu_address =
+        (uintptr_t)state->bsp_bundle.lightmap_pixels;
+#endif
     if (bsp_resource_frame_build(
             &state->resource_frames[resource_slot],
             &state->transient_ring, resource_slot,
             state->resources->resource_heap,
             state->resources->resource_heap_bytes,
-            &state->bsp_bundle, state->clear_vertices,
+            &state->bsp_bundle, lightmap_gpu_address,
+            state->clear_vertices,
             state->clear_indices, state->noclip.position,
             state->noclip.forward,
             (float)state->resources->surface.width /
@@ -621,9 +715,56 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
             &state->cache_plans[resource_slot]) != 0) {
         return resource_compose_fail(state, resource_slot, -9);
     }
+#ifdef PS5_TEXTURE_PATH
+    if (ps5_cache_cpu_to_gpu_plan(
+            state->resources->resource_heap,
+            state->resources->resource_heap_bytes,
+            state->dynamic_lightmap_updates[resource_slot].written_address,
+            state->dynamic_lightmap_updates[resource_slot]
+                .written_span_bytes,
+            &state->dynamic_lightmap_cache_plans[resource_slot]) != 0)
+        return resource_compose_fail(state, resource_slot, -9);
+#endif
     ps5_native_cache_flush(
         state->cache_plans[resource_slot].flush_address,
         state->cache_plans[resource_slot].flush_bytes);
+#ifdef PS5_TEXTURE_PATH
+    ps5_native_cache_flush(
+        state->dynamic_lightmap_cache_plans[resource_slot].flush_address,
+        state->dynamic_lightmap_cache_plans[resource_slot].flush_bytes);
+    const uint64_t frame_upload_bytes =
+        (uint64_t)transient_slot->used +
+        state->dynamic_lightmap_updates[resource_slot].uploaded_bytes;
+    state->uploaded_bytes += frame_upload_bytes;
+    if (frame->frame_index < 2u ||
+        frame->frame_index + 2u >= BSP_GATE_FRAME_COUNT)
+        (void)ps5log_printf(PS5LOG_MARK,
+            "DYNAMIC_LIGHTMAP_FRAME frame=%llu slot=%u pattern=%u "
+            "patch_hash=%016llx first_upload=%s patch_bytes=%llu "
+            "lightmap_upload_bytes=%llu dirty_span_bytes=%llu "
+            "acquire_bytes=%llu "
+            "resident_bytes=%llu uploaded_bytes=%llu "
+            "transient_upload_bytes=%llu total_uploaded_bytes=%llu",
+            (unsigned long long)frame->frame_index, resource_slot,
+            state->dynamic_lightmap_updates[resource_slot].pattern,
+            (unsigned long long)
+                state->dynamic_lightmap_updates[resource_slot].patch_hash,
+            state->dynamic_lightmap_updates[resource_slot].first_upload
+                ? "true" : "false",
+            (unsigned long long)state->dynamic_lightmap_layout.patch_bytes,
+            (unsigned long long)
+                state->dynamic_lightmap_updates[resource_slot].uploaded_bytes,
+            (unsigned long long)
+                state->dynamic_lightmap_updates[resource_slot]
+                    .written_span_bytes,
+            (unsigned long long)
+                state->dynamic_lightmap_cache_plans[resource_slot]
+                    .acquire_bytes,
+            (unsigned long long)state->resident_bytes,
+            (unsigned long long)frame_upload_bytes,
+            (unsigned long long)transient_slot->used,
+            (unsigned long long)state->uploaded_bytes);
+#endif
     if (frame->frame_index == 0u ||
         frame->frame_index + 1u == BSP_GATE_FRAME_COUNT)
         (void)ps5log_printf(PS5LOG_MARK,
@@ -670,6 +811,19 @@ static int frame_compose(const GearsAnimationFrame *frame, void *opaque)
         state->resources->resource_heap_bytes);
     if (result != 0)
         return resource_compose_fail(state, resource_slot, -10);
+#ifdef PS5_TEXTURE_PATH
+    result = ps5_native_acquire_mem(
+        &cursor, (uint32_t)(end - cursor),
+        state->dynamic_lightmap_cache_plans[resource_slot].acquire_base,
+        state->dynamic_lightmap_cache_plans[resource_slot].acquire_bytes,
+        state->dynamic_lightmap_cache_plans[resource_slot].engine,
+        state->dynamic_lightmap_cache_plans[resource_slot].gcr_control,
+        state->dynamic_lightmap_cache_plans[resource_slot].poll_cycles,
+        state->resources->resource_heap,
+        state->resources->resource_heap_bytes);
+    if (result != 0)
+        return resource_compose_fail(state, resource_slot, -10);
+#endif
 #endif
     result = ps5_native_fill_depth(
         &cursor, (uint32_t)(end - cursor), state->resources->depth,
@@ -1016,6 +1170,13 @@ static int cleanup(void)
     resources.framebuffer_allocated = 0;
 #ifdef PS5_RESOURCE_FOUNDATION
     if (resources.resource_heap_mapped) {
+#ifdef PS5_TEXTURE_PATH
+        for (uint32_t slot = 0u; slot < 2u; ++slot)
+            if (resources.dynamic_lightmap_allocations[slot].generation != 0u)
+                (void)ps5_resource_pool_release_unsubmitted(
+                    &resources.resource_pool,
+                    &resources.dynamic_lightmap_allocations[slot]);
+#endif
         (void)ps5_resource_pool_release_unsubmitted(
             &resources.resource_pool, &resources.transient_allocation);
         (void)ps5_resource_pool_release_unsubmitted(
@@ -1128,7 +1289,9 @@ static uint64_t bright_pixel_count(const void *data, size_t bytes)
 
 static void park_complete(void)
 {
-#ifdef PS5_RESOURCE_FOUNDATION
+#ifdef PS5_TEXTURE_PATH
+    ps5log_close("bsp-texture-path-lightmap-soak-complete");
+#elif defined(PS5_RESOURCE_FOUNDATION)
     ps5log_close("bsp-resource-soak-complete");
 #elif defined(PS5_BSP_TEXTURED)
     ps5log_close("bsp-textured-soak-complete");
@@ -1182,7 +1345,15 @@ int main(void)
                         config_result, log_result,
                         log_path ? log_path : "unavailable");
 #ifdef PS5_BSP_VIEWER
-#ifdef PS5_RESOURCE_FOUNDATION
+#ifdef PS5_TEXTURE_PATH
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_TEXTURE_PATH_BOOT schema=1 slice=dynamic-lightmap "
+        "target=gfx1013 fw=12.02 transient_slots=2 "
+        "ownership=fence+videoout bundle_sha256=%s bundle_bytes=%u "
+        "soak_frames=%u",
+        PS5_BSP_BUNDLE_SHA256, PS5_BSP_BUNDLE_BYTES,
+        BSP_GATE_FRAME_COUNT);
+#elif defined(PS5_RESOURCE_FOUNDATION)
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_RESOURCE_BOOT schema=1 target=gfx1013 fw=12.02 "
         "constants=vsharp transient_slots=2 pipelines=2 overlay=quad "
@@ -1541,11 +1712,35 @@ int main(void)
         (unsigned long long)renderer.command_slot_bytes,
         (unsigned long long)resources.bsp_bytes);
 #ifdef PS5_RESOURCE_FOUNDATION
+#ifdef PS5_TEXTURE_PATH
+    (void)ps5log_printf(PS5LOG_MARK,
+        "RESOURCE_HEAP_READY bytes=%llu allocations=6 "
+        "pool=fence-retired transient_slots=2 slot_bytes=%llu",
+        (unsigned long long)resources.resource_heap_bytes,
+        (unsigned long long)renderer.transient_ring.slots[0].bytes);
+    (void)ps5log_printf(PS5LOG_MARK,
+        "DYNAMIC_LIGHTMAP_READY image=%ux%u image_bytes=%llu "
+        "patch=%u,%u+%ux%u hit_face=%u patch_bytes=%llu "
+        "dirty_span_bytes=%llu slots=2 guards=256 "
+        "selection=center-ray",
+        renderer.dynamic_lightmap_layout.image_width,
+        renderer.dynamic_lightmap_layout.image_height,
+        (unsigned long long)renderer.dynamic_lightmap_layout.image_bytes,
+        renderer.dynamic_lightmap_layout.patch_x,
+        renderer.dynamic_lightmap_layout.patch_y,
+        renderer.dynamic_lightmap_layout.patch_width,
+        renderer.dynamic_lightmap_layout.patch_height,
+        renderer.dynamic_lightmap_layout.hit_face,
+        (unsigned long long)renderer.dynamic_lightmap_layout.patch_bytes,
+        (unsigned long long)
+            renderer.dynamic_lightmap_layout.dirty_span_bytes);
+#else
     (void)ps5log_printf(PS5LOG_MARK,
         "RESOURCE_HEAP_READY bytes=%llu allocations=4 "
         "pool=fence-retired transient_slots=2 slot_bytes=%llu",
         (unsigned long long)resources.resource_heap_bytes,
         (unsigned long long)renderer.transient_ring.slots[0].bytes);
+#endif
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_TEXTURE_TABLE_LAYOUT textures=%u descriptor_dwords=%u "
         "storage=per-frame-transient lightmap=%ux%u "
@@ -1686,7 +1881,13 @@ int main(void)
     input.telemetry = frame_telemetry;
     input.user = &renderer;
 #ifdef PS5_BSP_VIEWER
-#ifdef PS5_RESOURCE_FOUNDATION
+#ifdef PS5_TEXTURE_PATH
+    (void)ps5log_line(PS5LOG_MARK,
+        "BSP_LOOP_BEGIN mode=texture-path-lightmap-soak buffers=2 "
+        "color_dma=false depth_dma=true indexed=true frames=10000 "
+        "dynamic_lightmap=bounded descriptors=per-frame "
+        "overlay=fixed retirement=fence+videoout");
+#elif defined(PS5_RESOURCE_FOUNDATION)
     (void)ps5log_line(PS5LOG_MARK,
         "BSP_LOOP_BEGIN mode=resource-foundation-soak buffers=2 "
         "color_dma=false depth_dma=true indexed=true frames=60000 "
@@ -1810,6 +2011,45 @@ int main(void)
         renderer.resource_frames[0].transient_bytes != 0u &&
         renderer.resource_frames[1].transient_bytes != 0u &&
         renderer.last_completed_token != 0u;
+#ifdef PS5_TEXTURE_PATH
+    const int dynamic_lightmap_valid = resource_valid &&
+        first_hash != second_hash &&
+        bsp_dynamic_lightmap_guards_intact(
+            &renderer.dynamic_lightmap_slots[0],
+            &renderer.dynamic_lightmap_layout) &&
+        bsp_dynamic_lightmap_guards_intact(
+            &renderer.dynamic_lightmap_slots[1],
+            &renderer.dynamic_lightmap_layout) &&
+        bsp_dynamic_lightmap_surrounding_hash(
+            renderer.dynamic_lightmap_slots[0].pixels,
+            &renderer.dynamic_lightmap_layout) ==
+            renderer.dynamic_lightmap_slots[0].surrounding_hash &&
+        bsp_dynamic_lightmap_surrounding_hash(
+            renderer.dynamic_lightmap_slots[1].pixels,
+            &renderer.dynamic_lightmap_layout) ==
+            renderer.dynamic_lightmap_slots[1].surrounding_hash &&
+        renderer.dynamic_lightmap_slots[0].last_pattern == 0u &&
+        renderer.dynamic_lightmap_slots[1].last_pattern == 1u &&
+        renderer.dynamic_lightmap_slots[0].last_frame ==
+            BSP_GATE_FRAME_COUNT - 2u &&
+        renderer.dynamic_lightmap_slots[1].last_frame ==
+            BSP_GATE_FRAME_COUNT - 1u;
+    if (!dynamic_lightmap_valid)
+        park("dynamic-lightmap-readback-or-guard-gate-failure");
+    (void)ps5log_printf(PS5LOG_MARK,
+        "DYNAMIC_LIGHTMAP_READBACK pattern0=%016llx pattern1=%016llx "
+        "gpu_buffer0=%016llx gpu_buffer1=%016llx buffers_distinct=true "
+        "surrounding=stable guards=intact frames=%llu",
+        (unsigned long long)bsp_dynamic_lightmap_patch_hash(
+            renderer.dynamic_lightmap_slots[0].pixels,
+            &renderer.dynamic_lightmap_layout),
+        (unsigned long long)bsp_dynamic_lightmap_patch_hash(
+            renderer.dynamic_lightmap_slots[1].pixels,
+            &renderer.dynamic_lightmap_layout),
+        (unsigned long long)first_hash,
+        (unsigned long long)second_hash,
+        (unsigned long long)run.frames_completed);
+#endif
     if (!resource_valid)
         park("resource-render-or-retirement-gate-failure");
 #elif defined(PS5_BSP_TEXTURED)
@@ -1830,6 +2070,23 @@ int main(void)
         park("noclip-input-or-movement-gate-failure");
 #endif
 #ifdef PS5_RESOURCE_FOUNDATION
+#ifdef PS5_TEXTURE_PATH
+    (void)ps5log_printf(PS5LOG_MARK,
+        "BSP_TEXTURE_PATH_LIGHTMAP_COMPLETE frames=%llu "
+        "resident_bytes=%llu uploaded_bytes=%llu "
+        "patch=%u,%u+%ux%u hit_face=%u patterns=alternating "
+        "readback=gpu-visible surrounding=stable tokens=exact "
+        "guards=intact errors=%llu",
+        (unsigned long long)run.frames_completed,
+        (unsigned long long)renderer.resident_bytes,
+        (unsigned long long)renderer.uploaded_bytes,
+        renderer.dynamic_lightmap_layout.patch_x,
+        renderer.dynamic_lightmap_layout.patch_y,
+        renderer.dynamic_lightmap_layout.patch_width,
+        renderer.dynamic_lightmap_layout.patch_height,
+        renderer.dynamic_lightmap_layout.hit_face,
+        (unsigned long long)run.telemetry.errors);
+#endif
     (void)ps5log_printf(PS5LOG_MARK,
         "BSP_RESOURCE_SOAK_COMPLETE frames=%llu connected_frames=%llu "
         "read_errors=%llu textures=%u descriptor_dwords=%u "
@@ -1843,6 +2100,17 @@ int main(void)
         (unsigned long long)run.telemetry.errors);
     const uint64_t retire_token = renderer.last_completed_token;
     uint32_t reclaimed = 0u;
+#ifdef PS5_TEXTURE_PATH
+    if (ps5_resource_pool_release_deferred(
+            &resources.resource_pool,
+            &resources.dynamic_lightmap_allocations[0], retire_token) !=
+            PS5_RESOURCE_POOL_OK ||
+        ps5_resource_pool_release_deferred(
+            &resources.resource_pool,
+            &resources.dynamic_lightmap_allocations[1], retire_token) !=
+            PS5_RESOURCE_POOL_OK)
+        park("dynamic-lightmap-pool-retirement-gate-failure");
+#endif
     if (ps5_resource_pool_release_deferred(
             &resources.resource_pool, &resources.bsp_allocation,
             retire_token) != PS5_RESOURCE_POOL_OK ||
@@ -1857,7 +2125,12 @@ int main(void)
             retire_token) != PS5_RESOURCE_POOL_OK ||
         ps5_resource_pool_reclaim(
             &resources.resource_pool, retire_token, 1,
-            &reclaimed) != PS5_RESOURCE_POOL_OK || reclaimed != 4u)
+            &reclaimed) != PS5_RESOURCE_POOL_OK ||
+#ifdef PS5_TEXTURE_PATH
+        reclaimed != 6u)
+#else
+        reclaimed != 4u)
+#endif
         park("resource-pool-retirement-gate-failure");
     (void)ps5log_printf(PS5LOG_MARK,
         "RESOURCE_POOL_RETIRED token=%llu reclaimed=%u "
