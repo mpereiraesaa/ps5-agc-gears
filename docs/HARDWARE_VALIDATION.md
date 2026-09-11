@@ -7,8 +7,22 @@ only sanitized identifiers, hashes, outcomes and known limitations.
 
 ## Continuous production-runtime evidence
 
-The production lifecycle has no frame limit and is closed by the PS5
-**Close Game** action. Run
+The production lifecycle has no frame limit and provides an in-application
+**Options** exit. Run
+`20260911T103317147Z_PPSA99997_ps5-agc-gears_0x1dfb3af5d3024` exercised the
+exact graceful-exit build for 12,020 completed frames on FW 12.02. Options
+stopped production, drained both in-flight slots with zero retired fences and
+exact VideoOut tokens, verified intact guards, then closed Pad, UserService and
+VideoOut with result zero. Cleanup completed with result zero, telemetry ended
+gap-free at sequence 223 with `BYE reason=operator-options`, and BigApp was
+absent afterward. Artifact SHA-256:
+`5bba850357c408c5d3703eb7445144297eeaa6d558e6ef60d3ab041ed4da0ae6`.
+Transcript SHA-256:
+`b7f3205a2b9e62b1bb46fd5a6189d6129cb4046fd77900b7362f68df1a5af454`.
+The operator confirmed return to the home screen without a game/app failure
+dialog.
+
+Earlier run
 `20260905T152643467Z_PPSA99997_ps5-agc-gears_0x183d28b1c66c` used that
 continuous architecture in the immediately preceding build for 25,560
 completed frames. It emitted healthy heartbeats
@@ -16,23 +30,16 @@ through frame 25,200 with two frames in flight, exact retired fences/tokens,
 intact guards and zero renderer errors. Transcript SHA-256:
 `f618b9843799f9c4fe4da1c859694152b8c7e49ab6c554bdb067112210651feb`.
 
-The stream ended at operator closure without BYE, as expected for system-level
-termination. It is evidence for the continuous runtime and ownership
-heartbeats, but not a strict application-teardown result. A second continuous
+The stream ended at external PS5 Close Game without BYE. It is evidence for the
+continuous renderer and ownership heartbeats, but not an application-teardown
+result. A second continuous
 session completed 14,160 frames and emitted healthy heartbeats through 10,800;
 its transcript SHA-256 is
 `40b2a92b647a131f1a116cdf24ecc9ebf69075ccbe02045ca464ab11a02a2914`.
 
-The strict finite runs below validate ordered application teardown, but predate
-the continuous production lifecycle. Together these evidence sets cover the
-current renderer path and the explicit teardown path without claiming that one
-artifact exercised both policies.
-
-Commit `7087602` changes the telemetry accounting and its fully retired-slot
-failure path. Its native SELF builds and passes host contracts, but that exact
-artifact has not yet received a hardware run. The evidence above therefore
-validates the renderer and continuous lifecycle it retains, not binary identity
-with current HEAD.
+The strict finite runs below predate the current continuous lifecycle and remain
+long-duration renderer references. The 2026-09-11 run is the authoritative
+evidence for the current Options-driven teardown contract.
 
 ## Strict standalone 10,000-frame soak
 

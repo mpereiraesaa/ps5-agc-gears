@@ -30,8 +30,13 @@ visible and reproducible.
 | Rendering | Depth-tested geometry plus a shader-based render-target clear |
 | Scheduling | Two frames genuinely in flight |
 | Completion | GPU fence and exact VideoOut flip-event ownership |
-| Runtime | Continuous until the user selects **Close Game** |
+| Runtime | Continuous until the user presses **Options** |
 | Observability | Structured TCP telemetry, heartbeats and immutable run manifests |
+
+**Options** performs a graceful application exit: it stops new frames, retires
+both in-flight buffers by GPU fence and exact VideoOut token, releases Pad,
+UserService, VideoOut, direct-memory and AGC resources, and exits directly to
+the PS5 home screen without invoking the title CRT's failing `exit/atexit` path.
 
 The strongest finite reference is an uninterrupted 60,000-frame run on one
 PS5 with firmware 12.02. It completed with zero renderer errors and a clean

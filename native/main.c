@@ -1,6 +1,7 @@
 #include "../include/ps5_agc.h"
 #include "../include/ps5_agc_driver.h"
 #include "../include/ps5_platform.h"
+#include "../src/gears_exit.h"
 #include "../src/gears_frame_runner.h"
 #include "../src/gears_mesh.h"
 #include "../src/gears_renderer.h"
@@ -79,6 +80,9 @@ struct native_resources {
     int shader_mapped;
     int depth_allocated;
     int depth_mapped;
+    int user_service_initialized;
+    int pad_handle;
+    int pad_opened;
 };
 
 struct native_renderer {
@@ -94,6 +98,7 @@ struct native_renderer {
     struct ps5_agc_submit_context submit;
     struct native_resources *resources;
     int transaction_started;
+    GearsExitControl exit_control;
 };
 
 static struct native_resources resources;
@@ -337,9 +342,70 @@ static int guards_intact(void)
     return 1;
 }
 
+enum {
+    PS5_PAD_BUTTON_OPTIONS = 0x00000008u,
+    PS5_PAD_BUTTON_INTERCEPTED = 0x80000000u,
+};
+
+static void open_exit_control(void)
+{
+    int32_t user_id = -1;
+    gears_exit_init(&renderer.exit_control);
+    int result = sceUserServiceInitialize(0);
+    log_result("user_service_initialize", result);
+    if (result != 0)
+        return;
+    resources.user_service_initialized = 1;
+    result = sceUserServiceGetForegroundUser(&user_id);
+    log_result("user_service_foreground_user", result);
+    if (result != 0)
+        return;
+    result = scePadInit();
+    log_result("pad_init", result);
+    if (result != 0)
+        return;
+    resources.pad_handle = scePadOpen(user_id, 0, 0, 0);
+    (void)ps5log_printf(resources.pad_handle >= 0 ? PS5LOG_INFO : PS5LOG_ERR,
+                        "pad_open=0x%08x", (uint32_t)resources.pad_handle);
+    if (resources.pad_handle < 0)
+        return;
+    resources.pad_opened = 1;
+    (void)ps5log_line(PS5LOG_MARK,
+                      "GEARS_EXIT_AVAILABLE source=pad_options");
+}
+
+static int exit_requested(void)
+{
+    if (!resources.pad_opened)
+        return 0;
+    struct ps5_pad_data pad;
+    memset(&pad, 0, sizeof(pad));
+    const int result = scePadReadState(resources.pad_handle, &pad);
+    const int usable = result == 0 && pad.connected &&
+                       (pad.buttons & PS5_PAD_BUTTON_INTERCEPTED) == 0u;
+    return gears_exit_update(&renderer.exit_control, pad.buttons, usable,
+                             PS5_PAD_BUTTON_OPTIONS);
+}
+
 static int cleanup(void)
 {
     int result;
+    int auxiliary_result = 0;
+    if (resources.pad_opened) {
+        result = scePadClose(resources.pad_handle);
+        log_result("pad_close", result);
+        if (result != 0)
+            auxiliary_result = result;
+        resources.pad_opened = 0;
+        resources.pad_handle = -1;
+    }
+    if (resources.user_service_initialized) {
+        result = sceUserServiceTerminate();
+        log_result("user_service_terminate", result);
+        if (result != 0 && auxiliary_result == 0)
+            auxiliary_result = result;
+        resources.user_service_initialized = 0;
+    }
     if (resources.video.handle >= 0) {
         result = ps5_videoout_close(&resources.video, &video_ops);
         log_result("videoout_close_chain", result);
@@ -398,7 +464,7 @@ static int cleanup(void)
         (result = sceSysmoduleUnloadModuleInternal(AGC_MODULE)) != 0)
         return result;
     resources.agc_loaded = 0;
-    return 0;
+    return auxiliary_result;
 }
 
 static void park(const char *reason)
@@ -425,6 +491,7 @@ int main(void)
     resources.command_offset = resources.framebuffer_offset =
         resources.shader_offset = resources.depth_offset = -1;
     resources.video.handle = -1;
+    resources.pad_handle = -1;
     ps5log_config log_config;
     const char *log_path = 0;
     const uint64_t boot_token = now_ns(0);
@@ -432,7 +499,7 @@ int main(void)
     const int config_result = ps5log_load_config(
         ps5log_default_conf_paths, ps5log_default_conf_path_count,
         &log_config, &log_path);
-    const int log_result = config_result == 0
+    const int log_init_result = config_result == 0
         ? ps5log_init(&log_config, "PPSA99997", "ps5-agc-gears", boot_token)
         : 1;
     (void)ps5log_line(PS5LOG_INFO, "LOG_SCHEMA=3");
@@ -442,7 +509,7 @@ int main(void)
     (void)ps5log_hex64(PS5LOG_INFO, "LOG_BOOT_MONOTONIC_NS", boot_token);
     (void)ps5log_printf(PS5LOG_INFO,
                         "LOG_CONFIG_RESULT=%d LOG_INIT_RESULT=%d path=%s",
-                        config_result, log_result,
+                        config_result, log_init_result,
                         log_path ? log_path : "unavailable");
     (void)ps5log_line(PS5LOG_MARK,
         "GEARS_BOOT schema=1 target=gfx1013 fw=12.02 color_clear=rt_draw");
@@ -657,6 +724,7 @@ int main(void)
     GearsFrameLoop loop;
     if (gears_frame_loop_init(&loop, &input) != 0)
         return fail_pre_submit("frame_loop_init", -1);
+    open_exit_control();
     uint64_t last_guard_check = 0u;
     uint64_t last_heartbeat = 0u;
     for (;;) {
@@ -679,5 +747,25 @@ int main(void)
                 (unsigned long long)run.telemetry.errors);
             last_heartbeat = run.frames_completed;
         }
+        if (exit_requested())
+            break;
     }
+    (void)ps5log_line(PS5LOG_MARK,
+                      "GEARS_EXIT_REQUEST source=pad_options");
+    result = gears_frame_loop_drain(&loop);
+    GearsFrameRunnerResult final_run = {0};
+    if (result != 0 || gears_frame_loop_result(&loop, &final_run) != 0 ||
+        final_run.state != GEARS_RUN_COMPLETE)
+        park("graceful-drain-failure");
+    if (!guards_intact())
+        park("graceful-exit-guard-corruption");
+    (void)ps5log_printf(PS5LOG_MARK,
+                        "GEARS_DRAIN_COMPLETE frames=%llu in_flight=0 "
+                        "retired_fences=zero tokens=exact guards=intact",
+                        (unsigned long long)final_run.frames_completed);
+    result = cleanup();
+    log_result("graceful_cleanup", result);
+    ps5log_close(result == 0 ? "operator-options" :
+                              "operator-options-cleanup-error");
+    _exit(result == 0 ? 0 : 1);
 }

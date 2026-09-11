@@ -12,16 +12,20 @@ make native-release AMDLLPC=/path/to/amdllpc \
 The renderer initializes one persistent state machine and calls `run_frame`
 continuously. Frame indices, telemetry and flip tokens are 64-bit and never
 restart at an artificial boundary. It emits a heartbeat every 3,600 completed
-frames but has no voluntary frame limit, chunk, sleep or automatic exit. The
-user closes the title with the PS5 **Close Game** action.
+frames but has no frame limit, chunk, sleep or automatic timeout. The user
+presses **Options** to request a normal application exit.
 
-An external Close Game terminates the process through the system lifecycle, so
-the TCP transcript normally ends without application BYE. That is expected for
-operator closure. Automated soaks use this same artifact: the PC supervisor
-observes continuous frame/ownership/guard telemetry, records its target and
-closes the exact title when the target is reached. Host tests exercise bounded
-sequences by calling the same state machine's `drain` operation directly; no
-second runner or frame-limit API exists.
+The Options path stops producing frames, drains both in-flight slots by GPU
+fence and exact VideoOut token, checks the guards, closes Pad/UserService,
+VideoOut, direct memory and AGC, emits BYE and calls `_exit(0)`. Returning from
+`main` is intentionally forbidden: on FW 12.02 the title CRT's `exit/atexit`
+path can remove BigApp and still report a game/app failure. The PS5
+system menu's **Close Game** command externally terminates the process and
+cannot execute this application-owned teardown; it is not the release
+validation path. Automated soaks use the same artifact and finish by injecting
+Options after reaching their target. Host tests exercise bounded sequences by
+calling the same state machine's `drain` operation directly; no second runner
+or frame-limit API exists.
 
 ## Candidate archive
 

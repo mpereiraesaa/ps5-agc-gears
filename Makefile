@@ -14,6 +14,7 @@ $(BUILD)/$(1): $(2) | $(BUILD)
 endef
 
 $(eval $(call test_rule,test_gears_mesh,tests/test_gears_mesh.c src/gears_mesh.c,-lm))
+$(eval $(call test_rule,test_gears_exit,tests/test_gears_exit.c src/gears_exit.c,))
 $(eval $(call test_rule,test_gears_scene,tests/test_gears_scene.c src/gears_scene.c,-lm))
 $(eval $(call test_rule,test_gears_frame_tracker,tests/test_gears_frame_tracker.c src/gears_frame_tracker.c,))
 $(eval $(call test_rule,test_gears_draw_compose,tests/test_gears_draw_compose.c src/gears_draw_compose.c,))
@@ -40,7 +41,7 @@ $(eval $(call test_rule,test_ps5_agc_writer,tests/test_ps5_agc_writer.c src/ps5_
 $(eval $(call test_rule,test_ps5_agc_submit,tests/test_ps5_agc_submit.c src/ps5_agc_submit.c src/ps5_gpu_span.c,))
 $(eval $(call test_rule,test_ps5_videoout,tests/test_ps5_videoout.c src/ps5_videoout.c src/ps5_surface.c,))
 
-TESTS := test_gears_mesh test_gears_scene test_gears_frame_tracker \
+TESTS := test_gears_mesh test_gears_exit test_gears_scene test_gears_frame_tracker \
 	test_gears_draw_compose test_gears_animation test_gears_telemetry \
 	test_gears_frame_runner test_gears_rt_clear test_gears_renderer \
 	test_ps5_surface test_ps5_present test_ps5_frame_completion \

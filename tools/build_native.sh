@@ -65,7 +65,8 @@ common=(-O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
 
 sources=(
     native/main.c native/ps5_agc_native.c
-    src/gears_animation.c src/gears_draw_compose.c src/gears_frame_runner.c
+    src/gears_animation.c src/gears_draw_compose.c src/gears_exit.c
+    src/gears_frame_runner.c
     src/gears_frame_tracker.c src/gears_mesh.c src/gears_renderer.c
     src/gears_rt_clear.c src/gears_scene.c src/gears_telemetry.c
     src/ps5_agc_submit.c src/ps5_agc_writer.c src/ps5_color_target.c
