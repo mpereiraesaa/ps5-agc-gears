@@ -37,6 +37,8 @@ sce_sys/param.json
 shaders/gears_lit.pipe
 src/gears_mesh.c
 src/gears_mesh.h
+src/gears_exit.c
+src/gears_exit.h
 src/gears_frame_tracker.c
 src/gears_frame_tracker.h
 src/gears_frame_runner.c
@@ -82,6 +84,7 @@ src/ps5_agc_submit.h
 src/ps5_videoout.c
 src/ps5_videoout.h
 tests/test_gears_mesh.c
+tests/test_gears_exit.c
 tests/test_gears_frame_tracker.c
 tests/test_gears_frame_runner.c
 tests/test_gears_draw_compose.c
