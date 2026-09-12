@@ -34,8 +34,10 @@ and exact per-slot GPU/VideoOut completion. No new graphics import was required.
 - `sceAgcCbSetShRegisterRangeDirect`: public-reference code uses it for resource
   descriptors. It is convenient for dynamic uniforms/buffers but not required
   for Plasma because the existing SH-indirect path can update user registers.
-- `sceAgcSuspendPoint`: present in a public reference after submit. It is not
-  required by our proven fence/event completion path and should remain optional.
+- `sceAgcSuspendPoint`: required by the native submission lifecycle after a
+  successful submit. Fence/event completion does not establish a suspendable
+  queue. The earlier "optional" assessment did not validate system suspension.
+  See [suspend-point correction](GPU_SUSPEND_POINT.md) for evidence and limits.
 - `sceAgcDcbDrawIndex` (`q88lQ+GP5Yk`), or the bound-index trio
   `sceAgcDcbSetIndexBuffer` (`l4fM9K-Lyks`),
   `sceAgcDcbSetIndexCount` (`8N2tmT3jmC8`) and

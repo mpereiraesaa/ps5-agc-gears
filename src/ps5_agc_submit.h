@@ -12,6 +12,7 @@ struct ps5_agc_submit_context {
     size_t gpu_mapping_bytes;
     ps5_agc_cache_flush_fn flush;
     ps5_agc_driver_submit_fn submit;
+    int32_t (*suspend_point)(void);
 };
 
 enum ps5_agc_submit_result {

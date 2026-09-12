@@ -4,6 +4,8 @@
 
 #define UNUSED(value) ((void)(value))
 
+int32_t sceAgcSuspendPoint(void) { return -1; }
+
 int32_t sceAgcInit(void *state, uint32_t size)
 {
     UNUSED(state); UNUSED(size); return -1;

@@ -94,4 +94,5 @@ void ps5_native_submit_context_init(struct ps5_agc_submit_context *context,
     context->gpu_mapping_bytes = gpu_mapping_bytes;
     context->flush = ps5_native_cache_flush;
     context->submit = sceAgcDriverSubmitDcb;
+    context->suspend_point = sceAgcSuspendPoint;
 }

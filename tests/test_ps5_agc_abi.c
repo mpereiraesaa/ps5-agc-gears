@@ -20,6 +20,8 @@ int main(void)
     int32_t (*submit_fn)(void *) = sceAgcDriverSubmitDcb;
     uint32_t *(*flip_fn)(void *, uint32_t, int32_t, uint32_t, int64_t) =
         sceAgcDcbSetFlip;
-    assert(init_fn != NULL && submit_fn != NULL && flip_fn != NULL);
+    int32_t (*suspend_fn)(void) = sceAgcSuspendPoint;
+    assert(init_fn != NULL && submit_fn != NULL && flip_fn != NULL &&
+           suspend_fn != NULL);
     return 0;
 }
