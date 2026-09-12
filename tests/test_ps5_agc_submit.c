@@ -7,6 +7,15 @@ static const void *flushed_address;
 static size_t flushed_bytes;
 static int submit_result;
 static unsigned submits;
+static unsigned suspends;
+static int suspend_result;
+
+static int32_t mock_suspend(void)
+{
+    assert(submits == 1u);
+    ++suspends;
+    return suspend_result;
+}
 
 static void mock_flush(const void *address, size_t bytes)
 {
@@ -29,7 +38,7 @@ int main(void)
 {
     uint32_t mapping[64] = {0};
     struct ps5_agc_submit_context context = {
-        mapping, sizeof(mapping), mock_flush, mock_submit
+        mapping, sizeof(mapping), mock_flush, mock_submit, mock_suspend
     };
     flushed_address = 0;
     flushed_bytes = 0u;
@@ -38,6 +47,21 @@ int main(void)
     assert(ps5_agc_submit_checked(mapping + 4, 12u, &context) == -77);
     assert(flushed_address == mapping + 4 && flushed_bytes == 48u &&
            submits == 1u);
+    assert(suspends == 0u);
+    submits = 0u;
+    submit_result = 0;
+    assert(ps5_agc_submit_checked(mapping, 4u, &context) == 0);
+    assert(submits == 1u && suspends == 1u);
+    submits = suspends = 0u;
+    suspend_result = -88;
+    assert(ps5_agc_submit_checked(mapping, 4u, &context) == -88);
+    assert(submits == 1u && suspends == 1u);
+    submits = suspends = 0u;
+    context.suspend_point = 0;
+    assert(ps5_agc_submit_checked(mapping, 4u, &context) ==
+           PS5_AGC_SUBMIT_PRECONDITION);
+    assert(submits == 0u && suspends == 0u);
+    context.suspend_point = mock_suspend;
 
     submits = 0u;
     assert(ps5_agc_submit_checked(mapping + 60, 8u, &context) ==

@@ -16,6 +16,8 @@ typedef struct ps5_agc_register {
 } ps5_agc_register;
 
 int32_t sceAgcInit(void *state, uint32_t size);
+/* Native GPU suspension opportunity; not a completion fence. */
+int32_t sceAgcSuspendPoint(void);
 int32_t sceAgcCreateShader(void **shader, void *header, void *code);
 int32_t sceAgcLinkShaders(void *cx, void *uc, void *reserved,
                           void *pre_raster, void *pixel, uint32_t primitive);
