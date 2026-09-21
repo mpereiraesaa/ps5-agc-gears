@@ -23,6 +23,7 @@ struct ps5_pipeline_registers {
 
 int ps5_pipeline_build(
     struct ps5_pipeline_registers *out,
+    /* NULL selects a depth-only pass: see ps5_pipeline.c. */
     const ps5_agc_register render_target[PS5_PIPELINE_RT_REGISTERS],
     const struct ps5_agc_linked_cx *linked_cx,
     const struct ps5_agc_linked_uc *linked_uc,

@@ -29,17 +29,35 @@ int ps5_pipeline_build(
     const ps5_agc_register pixel_sh[6],
     uint32_t width, uint32_t height)
 {
-    if (!out || !render_target || !linked_cx || !linked_uc ||
+    if (!out || !linked_cx || !linked_uc ||
         !pre_raster_cx || !pixel_cx || !pre_raster_sh || !pixel_sh ||
         !width || !height || width > UINT16_MAX || height > UINT16_MAX)
         return -1;
-    for (uint32_t i = 0; i < PS5_PIPELINE_RT_REGISTERS; ++i)
+    /* A NULL render target is a DEPTH-ONLY pass: the pass binds a depth
+     * attachment and no colour one, which Vulkan expresses as
+     * colorAttachmentCount = 0. The colour block still has to be emitted,
+     * because these context registers are part of the plan's fixed layout, so
+     * it is emitted with every value zero. That is not a placeholder: bits
+     * [2,6] of CB_COLOR0_INFO (context offset 0x31c) are its FORMAT field and
+     * COLOR_INVALID is 0, so an all-zero block IS the "no surface bound" state
+     * this hardware reads. It is the same state RADV programs for an absent
+     * colour attachment, which writes CB_COLOR0_INFO = FORMAT(COLOR_INVALID)
+     * and leaves the rest of the CB_COLOR0 block alone
+     * (radv_cmd_buffer.c radv_emit_framebuffer_state). RADV's RB+ exception,
+     * which forces the first slot to COLOR_32 for a depth-only pass, does not
+     * apply here: rbplus_allowed requires GFX10_3 or one of the named older
+     * chips (ac_gpu_info.c), and this part is GFX10_1. */
+    for (uint32_t i = 0; render_target && i < PS5_PIPELINE_RT_REGISTERS; ++i)
         if (render_target[i].offset != rt_offsets[i])
             return -2;
 
     memset(out, 0, sizeof(*out));
-    memcpy(out->cx, render_target,
-           PS5_PIPELINE_RT_REGISTERS * sizeof(ps5_agc_register));
+    if (render_target)
+        memcpy(out->cx, render_target,
+               PS5_PIPELINE_RT_REGISTERS * sizeof(ps5_agc_register));
+    else
+        for (uint32_t i = 0; i < PS5_PIPELINE_RT_REGISTERS; ++i)
+            out->cx[i] = (ps5_agc_register){rt_offsets[i], 0u};
     const ps5_agc_register viewport[PS5_PIPELINE_VIEWPORT_REGISTERS] = {
         {0x10f, float_bits((float)width * 0.5f)},
         {0x110, float_bits((float)width * 0.5f)},
@@ -51,7 +69,11 @@ int ps5_pipeline_build(
         {0x2fc, float_bits(1.0f)}, {0x2fd, float_bits(1.0f)},
         {0x090, UINT32_C(0x80000000)},
         {0x091, width | (height << 16)},
-        {0x08e, UINT32_C(0x0000000f)},
+        /* CB_TARGET_MASK (context offset 0x08e) names the colour channels the
+         * colour target writes. A depth-only pass writes none, so the mask is
+         * zero there; with a colour target the single render target keeps all
+         * four channels enabled. */
+        {0x08e, render_target ? UINT32_C(0x0000000f) : UINT32_C(0)},
     };
     memcpy(out->cx + PS5_PIPELINE_RT_REGISTERS, viewport, sizeof(viewport));
     memcpy(out->cx + PS5_PIPELINE_RT_REGISTERS +
