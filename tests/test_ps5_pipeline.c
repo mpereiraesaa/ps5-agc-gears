@@ -57,6 +57,27 @@ int main(void)
     assert(memcmp(a.sh, pre_sh, sizeof(pre_sh)) == 0);
     assert(memcmp(a.sh + 6, pixel_sh, sizeof(pixel_sh)) == 0);
     assert(memcmp(a.uc, &linked_uc, sizeof(linked_uc)) == 0);
+    /* A depth-only pass passes no render target. The colour block keeps its
+     * offsets and every value is zero, which is the hardware's "no surface"
+     * state because CB_COLOR0_INFO.FORMAT (bits [2,6] of offset 0x31c) reads
+     * COLOR_INVALID == 0; and CB_TARGET_MASK writes no channel. Everything
+     * that does not describe the colour target is identical to the pass that
+     * has one. */
+    struct ps5_pipeline_registers depth_only;
+    assert(ps5_pipeline_build(&depth_only, NULL, &linked_cx, &linked_uc,
+                              pre_cx, pixel_cx, pre_sh, pixel_sh,
+                              1920u, 1080u) == 0);
+    for (uint32_t i = 0; i < PS5_PIPELINE_RT_REGISTERS; ++i) {
+        assert(depth_only.cx[i].offset == a.cx[i].offset);
+        assert(depth_only.cx[i].value == 0u);
+    }
+    assert(depth_only.cx[30].offset == 0x08eu && depth_only.cx[30].value == 0u);
+    assert(a.cx[30].value == 0x0000000fu);
+    assert(memcmp(&depth_only.cx[16], &a.cx[16], 14 * sizeof(ps5_agc_register)) == 0);
+    assert(memcmp(&depth_only.cx[31], &a.cx[31], 53 * sizeof(ps5_agc_register)) == 0);
+    assert(memcmp(depth_only.sh, a.sh, sizeof(a.sh)) == 0);
+    assert(memcmp(depth_only.uc, a.uc, sizeof(a.uc)) == 0);
+
     rt[3].offset++;
     assert(ps5_pipeline_build(&a, rt, &linked_cx, &linked_uc,
                               pre_cx, pixel_cx, pre_sh, pixel_sh,
